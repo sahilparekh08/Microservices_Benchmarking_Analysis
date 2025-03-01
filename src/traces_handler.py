@@ -6,9 +6,8 @@ from span_data import SpanData
 JAEGER_URL = "http://localhost:16686"
 JAEGER_SERVICES_API_PATH = "/api/services"
 JAEGER_TRACES_API_PATH = "/api/traces"
-JAEGER_TRACES_LIMIT = 1
 
-def get_trace_ids(service_name: str, limit: int = JAEGER_TRACES_LIMIT) -> Dict[str, Any]:
+def get_trace_ids(service_name: str, limit: int) -> Dict[str, Any]:
     url = f"{JAEGER_URL}{JAEGER_TRACES_API_PATH}"
     params = {"service": service_name, "limit": limit}
     

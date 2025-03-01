@@ -26,9 +26,9 @@ done
 
 DURATION=$((DURATION + 5))
 
-echo "sudo perf record -o "${SERVICE_NAME}.data" -e LLC-loads -e LLC-load-misses -F 250 -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$SERVICE_NAME" | awk '{print $1}')) -g -- sleep $DURATION"
+echo "sudo perf record -o "${SERVICE_NAME}.data" -e LLC-loads -e LLC-load-misses -e instructions -F 250 -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$SERVICE_NAME" | awk '{print $1}')) -g -- sleep $DURATION"
 sudo perf record -o "${SERVICE_NAME}.data" \
-    -e LLC-loads -e LLC-load-misses -F 250 \
+    -e LLC-loads -e LLC-load-misses -e instructions -F 250 \
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$SERVICE_NAME" | awk '{print $1}')) \
     -g -- sleep $DURATION
 
@@ -36,9 +36,11 @@ echo "sudo perf script -i \"${SERVICE_NAME}.data\" > perf_output.txt"
 sudo perf script -i "${SERVICE_NAME}.data" > perf_output.txt
 
 echo "awk '/LLC-loads/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",LOAD\"} 
-     /LLC-load-misses/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",MISS\"}' perf_output.txt > $DATA_DIR/data/llc_data.csv"
+     /LLC-load-misses/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",MISS\"}
+     /instructions/ {gsub(\":\", \"\", \$3); print \$3 "," \$4 ",INSTRUCTIONS"}' perf_output.txt > $DATA_DIR/data/llc_data.csv"
 awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"} 
-     /LLC-load-misses/ {gsub(":", "", $3); print $3 "," $4 ",MISS"}' perf_output.txt > "$DATA_DIR/data/llc_data.csv"
+     /LLC-load-misses/ {gsub(":", "", $3); print $3 "," $4 ",MISS"}
+     /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt > "$DATA_DIR/data/llc_data.csv"
 
 echo "sudo rm -f \"${SERVICE_NAME}.data\""
 sudo rm -f "${SERVICE_NAME}.data"

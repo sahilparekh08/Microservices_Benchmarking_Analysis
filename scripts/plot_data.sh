@@ -14,4 +14,5 @@ SRC_DIR="${5:-"$(cd "$(dirname "$0")"/.. && pwd)/src"}"
 echo "python3 $SRC_DIR/plot_llc_data.py \"${TEST_NAME}\" \"${SERVICE_NAME}\" \"${CONFIG}\" \"${DATA_DIR}\""
 python3 $SRC_DIR/plot_llc_data.py "${TEST_NAME}" "${SERVICE_NAME}" "${CONFIG}" "${DATA_DIR}"
 
-# TDOD: script to plot distributions of jaeger data
+echo "python3 $SRC_DIR/plot_jaeger_data.py \"${TEST_NAME}\" \"${SERVICE_NAME}\" \"${CONFIG}\" \"${DATA_DIR}\""
+python3 $SRC_DIR/plot_jaeger_data.py "${TEST_NAME}" "${SERVICE_NAME}" "${CONFIG}" "${DATA_DIR}"

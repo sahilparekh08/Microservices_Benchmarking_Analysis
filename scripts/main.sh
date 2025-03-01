@@ -59,6 +59,7 @@ if [[ -z "$SERVICE_NAME" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DATA_DIR" ||
 fi
 
 SRC_DIR="$(cd "$(dirname "$0")"/.. && pwd)/src"
+SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 curr_time=$(date)
 echo "Started at time: $curr_time"
@@ -67,7 +68,12 @@ make_dirs $curr_time
 
 echo "--------------------------------------------------"
 echo "Running deathstar_clean_start.sh"
-./scripts/deathstar_clean_start.sh "$DOCKER_COMPOSE_DIR"
+$SCRIPTS_DIR/deathstar_clean_start.sh "$DOCKER_COMPOSE_DIR"
+echo "--------------------------------------------------"
+
+echo "--------------------------------------------------"
+echo "Running get_pid_info_for_containers.sh"
+$SCRIPTS_DIR/get_pid_info_for_containers.sh 
 echo "--------------------------------------------------"
 
 echo "sleep 5"
@@ -75,14 +81,16 @@ sleep 5
 
 echo "--------------------------------------------------"
 echo "Running run_workload.sh"
-./scripts/run_workload.sh --docker_compose_dir "$DOCKER_COMPOSE_DIR" --service_name "$SERVICE_NAME" --test_name "$TEST_NAME" --config "$CONFIG" > "$DATA_DIR/$curr_time/workload_output.log" &
+$SCRIPTS_DIR/run_workload.sh --docker_compose_dir "$DOCKER_COMPOSE_DIR" --service_name "$SERVICE_NAME" --test_name "$TEST_NAME" --config "$CONFIG" > "$DATA_DIR/$curr_time/run_workload_output.log" 2>&1 &
 echo "--------------------------------------------------"
 
-echo "sleep 5"
-sleep 5
+echo "--------------------------------------------------"
+echo "Running collect_perf_data.sh"
+$SCRIPTS_DIR/collect_perf_data.sh "$SERVICE_NAME $TEST_NAME $CONFIG $DATA_DIR/$curr_time/ $SRC_DIR"
+echo "--------------------------------------------------"
 
 echo "--------------------------------------------------"
-echo "Running collect_llc_data_for_service.sh"
-./scripts/collect_llc_data_for_service.sh "$SERVICE_NAME $TEST_NAME $CONFIG $DATA_DIR/$curr_time/ $SRC_DIR"
+echo "Running collect_analyse_jaeger_traces.sh"
+$SCRIPTS_DIR/collect_analyse_jaeger_traces.sh "$SERVICE_NAME" 1 "$DATA_DIR/$curr_time/data" "$SRC_DIR"
 echo "--------------------------------------------------"
 
