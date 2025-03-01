@@ -1,10 +1,10 @@
 #!/bin/bash
 
-DOCKER_COMPOSE_DIR_PATH=""
+DOCKER_COMPOSE_DIR=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--docker_compose_dir)
-			DOCKER_COMPOSE_DIR_PATH="$2"
+			DOCKER_COMPOSE_DIR="$2"
 			shift 2
 			;;
 		*)
@@ -14,34 +14,28 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ -z "$DOCKER_COMPOSE_DIR_PATH" ]]; then
-	echo "Usage: docker_clean_start --docker_compose_dir <docker_compose_dir_path>"
+if [[ -z "$DOCKER_COMPOSE_DIR" ]]; then
+	echo "Usage: docker_clean_start --docker_compose_dir <DOCKER_COMPOSE_DIR>"
 	exit 1
 fi
 
-if [[ ! -d "$DOCKER_COMPOSE_DIR_PATH" ]]; then
-	echo "Directory $DOCKER_COMPOSE_DIR_PATH does not exist"
+if [[ ! -d "$DOCKER_COMPOSE_DIR" ]]; then
+	echo "Directory $DOCKER_COMPOSE_DIR does not exist"
 	exit 1
 fi
 
 CURR_DIR="$(pwd)"
 
-echo "cd $DOCKER_COMPOSE_DIR_PATH || exit 1"
-cd ""$DOCKER_COMPOSE_DIR_PATH" || exit 1
-
-echo "docker compose down || exit 1"
-docker compose down || exit 1
+echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down) || exit 1"
+(cd "$DOCKER_COMPOSE_DIR" && docker compose down) || exit 1
 
 echo "docker volume prune -f"
 docker volume prune -f
 
-echo "docker compose up -d || exit 1"
-docker compose up -d || exit 1
+echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d) || exit 1"
+(cd "$DOCKER_COMPOSE_DIR" && docker compose up -d) || exit 1
 
-if [[ "$DOCKER_COMPOSE_DIR_PATH" =~ socialNetwork$ ]]; then
-	echo "python3 scripts/init_social_graph.py --graph=socfb-Reed98"
-	python3 scripts/init_social_graph.py --graph=socfb-Reed98
+if [[ "$DOCKER_COMPOSE_DIR" =~ socialNetwork$ ]]; then
+	echo "python3 $DOCKER_COMPOSE_DIR/scripts/init_social_graph.py --graph=socfb-Reed98"
+	python3 $DOCKER_COMPOSE_DIR/scripts/init_social_graph.py --graph=socfb-Reed98
 fi
-
-echo "cd $CURR_DIR || exit 1"
-cd $CURR_DIR || exit 1

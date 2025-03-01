@@ -38,11 +38,13 @@ for i in "${CONFIG[@]}"; do
         d*)
             DURATION="${i:1}"
             ;;
-        *)
-            echo "Unknown option: $i"
-            exit 1
     esac
 done
+
+if [[ $DURATION -eq 0 ]]; then
+    echo "Duration not provided in config"
+    exit 1
+fi
 
 DURATION=$((DURATION + 5))
 

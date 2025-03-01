@@ -34,11 +34,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$SERVICE_NAME" || -z "$DATA_DIR"]]; then
+if [[ -z "$SERVICE_NAME" || -z "$DATA_DIR" ]]; then
     echo "Usage: $0 --service_name <service_name> --data_dir <data_dir> [--limit <limit>] [--src_dir <src_dir>]"
     exit 1
 fi
 
 SRC_DIR=${SRC_DIR:-"$(dirname "$0")/../src"}
 
-python3 "$SRC_DIR/analyse_jaeger_traces.py" "$SERVICE_NAME" "$DATA_DIR" "$LIMIT"
+python3 "$SRC_DIR/process_jaeger_traces.py" "$SERVICE_NAME" "$DATA_DIR" "$LIMIT"

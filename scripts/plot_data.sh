@@ -35,15 +35,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$SERVICE_NAME" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DATA_DIR"]]; then
+if [[ -z "$SERVICE_NAME" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
     echo "Usage: ./plot_data.sh --service_name <service_name> --test_name <test_name> --config <config> --data_dir <data_dir> [--src_dir <src_dir>]"
     exit 1
 fi
 
 SRC_DIR=${SRC_DIR:-"$(dirname "$0")/../src"}
 
-echo "python3 $SRC_DIR/plot_llc_data.py \"${TEST_NAME}\" \"${SERVICE_NAME}\" \"${CONFIG}\" \"${DATA_DIR}\""
-python3 $SRC_DIR/plot_llc_data.py "${TEST_NAME}" "${SERVICE_NAME}" "${CONFIG}" "${DATA_DIR}"
+echo "python3 $SRC_DIR/plot_perf_data.py \"${TEST_NAME}\" \"${SERVICE_NAME}\" \"${CONFIG}\" \"${DATA_DIR}\""
+python3 $SRC_DIR/plot_perf_data.py "${TEST_NAME}" "${SERVICE_NAME}" "${CONFIG}" "${DATA_DIR}"
 
 echo "python3 $SRC_DIR/plot_jaeger_data.py \"${TEST_NAME}\" \"${SERVICE_NAME}\" \"${CONFIG}\" \"${DATA_DIR}\""
 python3 $SRC_DIR/plot_jaeger_data.py "${TEST_NAME}" "${SERVICE_NAME}" "${CONFIG}" "${DATA_DIR}"
