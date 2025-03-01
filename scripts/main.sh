@@ -22,8 +22,6 @@ make_dirs() {
     mkdir -p $DATA_DIR/$curr_time/plots
 }
 
-
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --service_name)
@@ -58,8 +56,8 @@ if [[ -z "$SERVICE_NAME" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DATA_DIR" ||
     exit 1
 fi
 
-SRC_DIR="$(cd "$(dirname "$0")"/.. && pwd)/src"
-SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC_DIR=${SRC_DIR:-"$(dirname "$0")/../src"}
+SCRIPTS_DIR="$(dirname "$0")"
 
 curr_time=$(date)
 echo "Started at time: $curr_time"
@@ -68,7 +66,7 @@ make_dirs $curr_time
 
 echo "--------------------------------------------------"
 echo "Running deathstar_clean_start.sh"
-$SCRIPTS_DIR/deathstar_clean_start.sh "$DOCKER_COMPOSE_DIR"
+$SCRIPTS_DIR/deathstar_clean_start.sh --docker_compose_dir "$DOCKER_COMPOSE_DIR"
 echo "--------------------------------------------------"
 
 echo "--------------------------------------------------"
@@ -86,11 +84,15 @@ echo "--------------------------------------------------"
 
 echo "--------------------------------------------------"
 echo "Running collect_perf_data.sh"
-$SCRIPTS_DIR/collect_perf_data.sh "$SERVICE_NAME $TEST_NAME $CONFIG $DATA_DIR/$curr_time/ $SRC_DIR"
+$SCRIPTS_DIR/collect_perf_data.sh --service_name "$SERVICE_NAME" --config "$CONFIG" --data_dir "$DATA_DIR/$curr_time/"
 echo "--------------------------------------------------"
 
 echo "--------------------------------------------------"
 echo "Running collect_analyse_jaeger_traces.sh"
-$SCRIPTS_DIR/collect_analyse_jaeger_traces.sh "$SERVICE_NAME" 1 "$DATA_DIR/$curr_time/data" "$SRC_DIR"
+$SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --service_name "$SERVICE_NAME" --limit 1 --data_dir "$DATA_DIR/$curr_time/data" --src_dir "$SRC_DIR"
 echo "--------------------------------------------------"
 
+echo "--------------------------------------------------"
+echo "Running plot_data.sh"
+$SCRIPTS_DIR/plot_data.sh --test_name "$TEST_NAME" --service_name "$SERVICE_NAME" --config "$CONFIG" --data_dir "$DATA_DIR/$curr_time" --src_dir "$SRC_DIR"
+echo "--------------------------------------------------"

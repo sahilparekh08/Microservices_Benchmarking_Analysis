@@ -1,15 +1,33 @@
 #!/bin/bash
 
-if [[ $# -lt 1 ]]; then
-	echo "Usage: docker_clean_start <DOCKER_COMPOSE_DIR_PATH>"
+DOCKER_COMPOSE_DIR_PATH=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--docker_compose_dir)
+			DOCKER_COMPOSE_DIR_PATH="$2"
+			shift 2
+			;;
+		*)
+			echo "Unknown option: $1"
+			exit 1
+			;;
+	esac
+done
+
+if [[ -z "$DOCKER_COMPOSE_DIR_PATH" ]]; then
+	echo "Usage: docker_clean_start --docker_compose_dir <docker_compose_dir_path>"
 	exit 1
 fi
 
-DOCKER_COMPOSE_DIR_PATH="$(realpath "$1")"
+if [[ ! -d "$DOCKER_COMPOSE_DIR_PATH" ]]; then
+	echo "Directory $DOCKER_COMPOSE_DIR_PATH does not exist"
+	exit 1
+fi
+
 CURR_DIR="$(pwd)"
 
 echo "cd $DOCKER_COMPOSE_DIR_PATH || exit 1"
-cd $DOCKER_COMPOSE_DIR_PATH || exit 1
+cd ""$DOCKER_COMPOSE_DIR_PATH" || exit 1
 
 echo "docker compose down || exit 1"
 docker compose down || exit 1

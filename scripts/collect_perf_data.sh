@@ -1,14 +1,34 @@
 #!/bin/bash
 
-if [[ $# -lt 3 ]]; then
-    echo "Usage: $0 <SERVICE_NAME> <CONFIG> <DATA_DIR> [<SRC_DIR>]"
+SERVICE_NAME=""
+CONFIG=""
+DATA_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --service_name)
+            SERVICE_NAME="$2"
+            shift 2
+            ;;
+        --config)
+            CONFIG="$2"
+            shift 2
+            ;;
+        --data_dir)
+            DATA_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$SERVICE_NAME" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
+    echo "Usage: $0 --service_name <service_name> --config <config> --data_dir <data_dir>"
     exit 1
 fi
-
-SERVICE_NAME="$1"
-DATA_DIR="$2"
-CONFIG="$3"
-SRC_DIR="${4:-"$(cd "$(dirname "$0")"/.. && pwd)/src"}"
 
 DURATION=0
 
