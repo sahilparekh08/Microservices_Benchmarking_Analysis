@@ -24,8 +24,6 @@ if [[ ! -d "$DOCKER_COMPOSE_DIR" ]]; then
 	exit 1
 fi
 
-CURR_DIR="$(pwd)"
-
 echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down) || exit 1"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose down) || exit 1
 

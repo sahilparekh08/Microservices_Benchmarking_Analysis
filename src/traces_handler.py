@@ -57,11 +57,11 @@ def parse_and_save_traces(service_name: str, data_dir_for_curr_run: str, trace_i
         
         trace = response.json().get("data", None)
         if not trace:
-            print(f"Skipping trace [{trace_id}] due to missing data")
+            print(f"[WARNING:] Skipping trace [{trace_id}] due to missing data")
             continue
 
         if len(trace) != 1:
-            print(f"Skipping trace [{trace_id}] due to invalid data, expected 1 trace, got {len(trace)}")
+            print(f"[WARNING:] Skipping trace [{trace_id}] due to invalid data, expected 1 trace, got {len(trace)}")
             continue
 
         trace = trace[0]
@@ -74,6 +74,11 @@ def parse_and_save_traces(service_name: str, data_dir_for_curr_run: str, trace_i
         span_id_to_span_map = create_span_data_graph(trace)
 
         for span_id, span in span_id_to_span_map.items():
+            span_non_idle_execution_time = span.get_non_idle_execution_time()
+
+            if span_non_idle_execution_time < 0:
+                print(f"[WARNING:] Non idle execution time is negative for span [{span_id}] in trace [{trace_id}], span details: [{span}]")
+
             records.append({
                 "trace_id": span.trace_id,
                 "span_id": span.span_id,
@@ -82,7 +87,7 @@ def parse_and_save_traces(service_name: str, data_dir_for_curr_run: str, trace_i
                 "start_time": span.start_time,
                 "end_time": span.end_time,
                 "duration": span.duration,
-                "non_idle_execution_time": span.non_idle_execution_time,
+                "non_idle_execution_time": span_non_idle_execution_time
             })
 
     return pd.DataFrame(records)

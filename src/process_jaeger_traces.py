@@ -7,8 +7,8 @@ def process_traces(service_name: str, data_dir :str, limit: int) -> None:
     available_services = get_services()['data']
     if service_name not in available_services:
         print(f"Service '{service_name}' not found.")
-        print(f"Available services: {', '.join(available_services)}")
-        return
+        print(f"Available services: [{' , '.join(available_services)}]")
+        SystemExit(1)
     
     trace_ids = get_trace_ids(service_name, limit)
 
@@ -16,6 +16,10 @@ def process_traces(service_name: str, data_dir :str, limit: int) -> None:
     df_csv_file_name = f"{service_name}_traces_data.csv"
     df_csv_file_path = os.path.join(data_dir, df_csv_file_name)
     df.to_csv(df_csv_file_path, index=False)
+
+    # TODO: complete the config file maping container names to jaeger service names
+    # TODO: add the container names for each service also using the config file
+
     print(f"Saved traces data to {df_csv_file_path}")
 
 if __name__ == "__main__":
