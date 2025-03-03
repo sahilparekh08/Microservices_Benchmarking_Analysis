@@ -1,6 +1,3 @@
-# TODO: implement this
-# pick a few requests and then show llc, instructions data for those time intervals also
-
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt

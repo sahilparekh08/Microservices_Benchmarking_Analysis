@@ -79,3 +79,20 @@ python3 "$SRC_DIR/plot_jaeger_data.py" \
     echo "Error: Failed to plot Jaeger data. See $PLOT_JAEGER_DATA_LOG_PATH for details."
     exit 1
 }
+
+PLOT_PERF_WITH_TRACE_DATA_LOG_PATH="$DATA_DIR/logs/plot_perf_with_trace_data.log"
+echo -e "\npython3 $SRC_DIR/plot_perf_with_trace_data.py \\
+    --test-name \"${TEST_NAME}\" \\
+    --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
+    --container-name \"${CONTAINER_NAME}\" \\
+    --config \"${CONFIG}\" \\
+    --data-dir \"${DATA_DIR}\" > $PLOT_PERF_WITH_TRACE_DATA_LOG_PATH 2>&1"
+python3 "$SRC_DIR/plot_perf_with_trace_data.py" \
+    --test-name "${TEST_NAME}" \
+    --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
+    --container-name "${CONTAINER_NAME}" \
+    --config "${CONFIG}" \
+    --data-dir "${DATA_DIR}" > "$PLOT_PERF_WITH_TRACE_DATA_LOG_PATH" 2>&1 || {
+    echo "Error: Failed to plot performance data with traces. See $PLOT_PERF_WITH_TRACE_DATA_LOG_PATH for details."
+    exit 1
+}
