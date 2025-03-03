@@ -37,8 +37,7 @@ def get_services() -> List[str]:
     print("Services fetched successfully")
     return services
 
-
-def parse_and_save_traces(service_name: str, data_dir_for_curr_run: str, trace_ids: List[Any]) -> pd.DataFrame:
+def parse_and_save_traces(service_name_for_traces: str, data_dir_for_curr_run: str, trace_ids: List[Any], save_traces_json: bool) -> pd.DataFrame:
     records = []
     num_traces = len(trace_ids)
     counter = 0
@@ -67,7 +66,8 @@ def parse_and_save_traces(service_name: str, data_dir_for_curr_run: str, trace_i
         trace = trace[0]
 
         trace_id = trace.get("traceID", "unknown")
-        save_trace_to_file(service_name, data_dir_for_curr_run, trace_id, response.text)
+        if save_traces_json:
+            save_trace_to_file(service_name_for_traces, data_dir_for_curr_run, trace_id, response.text)
 
         print(f"[{counter}/{num_traces}] Parsing trace [{trace_id}]")
 
@@ -97,10 +97,16 @@ def create_span_data_graph(trace: Dict[str, Any]) -> Dict[str, SpanData]:
     
     span_id_to_span = {}
 
+    process_id_to_service_map = {}
+    processes = trace.get("processes", {})
+    for process_id, process in processes.items():
+        service_name = process.get("serviceName", "unknown")
+        process_id_to_service_map[process_id] = service_name
+
     for span in trace.get("spans", []):
         span_id = span.get("spanID", "unknown")
         trace_id = span.get("traceID", "unknown")
-        service = span.get("operationName", "unknown")
+        service = process_id_to_service_map.get(span.get("processID", "unknown"), "unknown")
         operation = span.get("operationName", "unknown")
         start_time = span.get("startTime", 0)
         duration = span.get("duration", 0)
@@ -122,8 +128,8 @@ def create_span_data_graph(trace: Dict[str, Any]) -> Dict[str, SpanData]:
 
     return span_id_to_span
 
-def save_trace_to_file(service_name: str, data_dir_for_curr_run: str, trace_id: str, trace_text: str) -> None:
-    file_path = f"{data_dir_for_curr_run}/{service_name}_{trace_id}.json"
+def save_trace_to_file(service_name_for_traces: str, data_dir_for_curr_run: str, trace_id: str, trace_text: str) -> None:
+    file_path = f"{data_dir_for_curr_run}/{service_name_for_traces}_{trace_id}.json"
 
     with open(file_path, "w") as file:
         file.write(trace_text)

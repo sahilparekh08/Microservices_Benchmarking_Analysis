@@ -1,12 +1,11 @@
 #!/bin/bash
 
 DOCKER_COMPOSE__DIR_PATH=""
-SERVICE_NAME=""
 TEST_NAME=""
 CONFIG=""
 
 usage() {
-    echo "Usage: $0 --docker_compose_dir <docker_compose_dir> --service-name <service_name> --test-name <test_name> --config <config>"
+    echo "Usage: $0 --docker_compose_dir <docker_compose_dir> --test-name <test_name> --config <config>"
     exit 1
 }
 
@@ -14,10 +13,6 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --docker_compose_dir)
             DOCKER_COMPOSE_DIR="$2"
-            shift 2
-            ;;
-        --service-name)
-            SERVICE_NAME="$2"
             shift 2
             ;;
         --test-name)
@@ -35,7 +30,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$DOCKER_COMPOSE_DIR" || -z "$SERVICE_NAME" || -z "$TEST_NAME" || -z "$CONFIG" ]]; then
+if [[ -z "$DOCKER_COMPOSE_DIR" || -z "$TEST_NAME" || -z "$CONFIG" ]]; then
     usage
 fi
 
