@@ -165,6 +165,8 @@ echo -e "--------------------------------------------------\n"
 echo "sleep 5"
 sleep 5
 
+# TODO: add the cpu shares, quota and period things to docker compose file
+
 echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \$4}' > \"$DATA_DIR/docker_container_service_config.csv\")"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose ps | awk '{print $1 "," $4}' > "$DATA_DIR/docker_container_service_config.csv")
 

@@ -48,6 +48,8 @@ fi
 
 DURATION=$((DURATION + 5))
 
+echo -e "\nStarting at $(date)"
+
 echo "sudo perf record -o "${CONTAINER_NAME}.data" -e LLC-loads -e LLC-load-misses -e instructions -F 250 -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) -g -- sleep $DURATION || exit 1"
 sudo perf record -o "${CONTAINER_NAME}.data" \
     -e LLC-loads -e LLC-load-misses -e instructions -F 250 \
@@ -74,3 +76,5 @@ sudo rm -f "${CONTAINER_NAME}.data"
 
 echo "sudo rm -f perf_output.txt"
 sudo rm -f perf_output.txt
+
+echo -e "Finished at $(date)\n"
