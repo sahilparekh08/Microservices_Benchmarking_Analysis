@@ -68,10 +68,18 @@ axes[0].axhline(misses_75th, color="red", linestyle=":", label="LLC Misses 75th 
 axes[0].set_xlabel("Time (seconds)")
 axes[0].set_ylabel("Frequency")
 axes[0].set_title(f"TEST: {test_name}\nSERVICE: {container_name}        CONFIGS: {configs}")
-axes[0].legend()
 axes[0].grid()
 
-# Plot Instructions on the second axes
+stats_text = (
+    f"LLC Loads Median: {loads_median:.2f}\n"
+    f"LLC Loads 25th: {loads_25th:.2f}, 75th: {loads_75th:.2f}\n"
+    f"LLC Misses Median: {misses_median:.2f}\n"
+    f"LLC Misses 25th: {misses_25th:.2f}, 75th: {misses_75th:.2f}"
+)
+fig.text(1.02, 0.75, stats_text, ha='left', va='top', fontsize=12, family='monospace')
+
+axes[0].legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12)
+
 axes[1].plot(instructions["Time"], instructions["Frequency"], label=f"Instructions (Samples: {num_instructions})", color="green", marker="o", linestyle="-")
 
 instructions_median = np.median(instructions["Frequency"])
@@ -85,52 +93,16 @@ axes[1].axhline(instructions_75th, color="green", linestyle=":", label="Instruct
 axes[1].set_xlabel("Time (seconds)")
 axes[1].set_ylabel("Frequency")
 axes[1].set_title("Instructions over Time")
-axes[1].legend()
 axes[1].grid()
 
-# fig, ax1 = plt.subplots(figsize=(10, 6))
+instructions_text = (
+    f"Instructions Median: {instructions_median:.2f}\n"
+    f"Instructions 25th: {instructions_25th:.2f}, 75th: {instructions_75th:.2f}"
+)
+fig.text(1.02, 0.25, instructions_text, ha='left', va='top', fontsize=12, family='monospace')
 
-# # Plot LLC Load and Misses on the left y-axis
-# ax1.plot(loads["Time"], loads["Frequency"], label=f"LLC Loads (Samples: {num_loads})", color="blue", marker="o", linestyle="-")
-# ax1.plot(misses["Time"], misses["Frequency"], label=f"LLC Misses (Samples: {num_misses})", color="red", marker="o", linestyle="-")
+axes[1].legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12)
 
-# loads_median = np.median(loads["Frequency"])
-# misses_median = np.median(misses["Frequency"])
-# loads_25th = np.percentile(loads["Frequency"], 25)
-# misses_25th = np.percentile(misses["Frequency"], 25)
-# loads_75th = np.percentile(loads["Frequency"], 75)
-# misses_75th = np.percentile(misses["Frequency"], 75)
-
-# ax1.axhline(loads_median, color="blue", linestyle="--", label="LLC Loads Median")
-# ax1.axhline(misses_median, color="red", linestyle="--", label="LLC Misses Median")
-# ax1.axhline(loads_25th, color="blue", linestyle=":", label="LLC Loads 25th Percentile")
-# ax1.axhline(misses_25th, color="red", linestyle=":", label="LLC Misses 25th Percentile")
-# ax1.axhline(loads_75th, color="blue", linestyle=":", label="LLC Loads 75th Percentile")
-# ax1.axhline(misses_75th, color="red", linestyle=":", label="LLC Misses 75th Percentile")
-
-# ax1.set_xlabel("Time (seconds)")
-# ax1.set_ylabel("Frequency (LLC Loads & Misses)")
-# ax1.set_title(f"TEST: {test_name}\nSERVICE: {container_name}        CONFIGS: {configs}")
-# ax1.grid()
-
-# ax2 = ax1.twinx()
-
-# # Plot Instructions on the right y-axis
-# ax2.plot(instructions["Time"], instructions["Frequency"], label=f"Instructions (Samples: {num_instructions})", color="green", marker="o", linestyle="-")
-
-# instructions_median = np.median(instructions["Frequency"])
-# instructions_25th = np.percentile(instructions["Frequency"], 25)
-# instructions_75th = np.percentile(instructions["Frequency"], 75)
-
-# ax2.axhline(instructions_median, color="green", linestyle="--", label="Instructions Median")
-# ax2.axhline(instructions_25th, color="green", linestyle=":", label="Instructions 25th Percentile")
-# ax2.axhline(instructions_75th, color="green", linestyle=":", label="Instructions 75th Percentile")
-
-# ax2.set_ylabel("Frequency (Instructions)")
-
-# ax1.legend(loc="upper left")
-# ax2.legend(loc="upper right")
-
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 0.9, 1])
 plt.savefig(output_file_path)
 print(f"Plot saved as {output_file_path}")

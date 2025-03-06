@@ -11,7 +11,7 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --docker_compose_dir)
+        --docker-compose-dir)
             DOCKER_COMPOSE_DIR="$2"
             shift 2
             ;;

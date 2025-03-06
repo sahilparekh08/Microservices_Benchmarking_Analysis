@@ -34,7 +34,7 @@ def get_services() -> List[str]:
         raise err
     
     services = response.json()
-    print("Services fetched successfully")
+    print("Services fetched successfully [{}]".format(services))
     return services
 
 def parse_and_save_traces(service_name_for_traces: str, data_dir_for_curr_run: str, trace_ids: List[Any], save_traces_json: bool) -> pd.DataFrame:

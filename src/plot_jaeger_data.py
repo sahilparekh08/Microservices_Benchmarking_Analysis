@@ -40,13 +40,15 @@ print(f"Total traces: {len(container_jaeger_traces_df)}")
 container_stats = container_jaeger_traces_df.groupby('service')['non_idle_execution_time'].describe(percentiles=[.25, .5, .75])
 
 num_plots = len(container_stats)
-num_files = math.ceil(num_plots / 6)
+plots_per_file = 4
+num_files = math.ceil(num_plots / plots_per_file)
 
 for file_idx in range(num_files):
-    remaining_plots = min(6, num_plots - file_idx * 6)
-    rows = math.ceil(remaining_plots / 3)
-    cols = min(3, remaining_plots)
-    fig, axs = plt.subplots(rows, cols, figsize=(20, 10))
+    remaining_plots = min(plots_per_file, num_plots - file_idx * plots_per_file)
+    rows = math.ceil(remaining_plots / 2)
+    cols = min(2, remaining_plots)
+
+    fig, axs = plt.subplots(rows, cols, figsize=(16, 12))
     
     if rows == 1 and cols == 1:
         axs = np.array([[axs]])
@@ -55,12 +57,12 @@ for file_idx in range(num_files):
     elif cols == 1:
         axs = np.expand_dims(axs, axis=1)
 
-    fig.suptitle(f"Jaeger Trace Data for Container [{container_name}] - File [{file_idx + 1}/{num_files}]", fontsize=16, y=1.05)
+    fig.suptitle(f"Jaeger Trace Data for Container [{container_name}] - File [{file_idx + 1}/{num_files}]", fontsize=20, y=1.02)
 
     plot_count = 0
 
     for idx, (service, stats) in enumerate(container_stats.iterrows()):
-        if idx < file_idx * 6 or idx >= (file_idx + 1) * 6:
+        if idx < file_idx * plots_per_file or idx >= (file_idx + 1) * plots_per_file:
             continue
 
         row = plot_count // cols
@@ -68,18 +70,15 @@ for file_idx in range(num_files):
         ax = axs[row, col]
 
         sns.histplot(container_jaeger_traces_df[container_jaeger_traces_df['service'] == service]['non_idle_execution_time'], kde=True, ax=ax)
-        ax.set_title(f'{container_name} - {service}', fontsize=14)
-        ax.set_xlabel('Non-Idle Execution Time', fontsize=12)
-        ax.set_ylabel('Frequency', fontsize=12)
+        ax.set_title(f'{container_name} - {service}', fontsize=18)
+        ax.set_xlabel('Non-Idle Execution Time', fontsize=16)
+        ax.set_ylabel('Frequency', fontsize=16)
+
         ax.axvline(stats['50%'], color='r', linestyle='--', label='Median')
         ax.axvline(stats['25%'], color='g', linestyle='--', label='25th Percentile')
         ax.axvline(stats['75%'], color='b', linestyle='--', label='75th Percentile')
 
-        ax.text(0.95, 0.90, f'Median: {stats["50%"]:.2f}', ha='right', va='center', transform=ax.transAxes, fontsize=10, color='r')
-        ax.text(0.95, 0.85, f'25th Percentile: {stats["25%"]:.2f}', ha='right', va='center', transform=ax.transAxes, fontsize=10, color='g')
-        ax.text(0.95, 0.80, f'75th Percentile: {stats["75%"]:.2f}', ha='right', va='center', transform=ax.transAxes, fontsize=10, color='b')
-
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=10)
+        ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12)
         ax.grid(True)
 
         plot_count += 1
@@ -90,6 +89,18 @@ for file_idx in range(num_files):
     else:
         for i in range(plot_count, rows * cols):
             axs[i // cols, i % cols].axis('off')
+
+    # Add a separate text box for Median and Percentiles outside the graph
+    median_text = ""
+    for idx, (service, stats) in enumerate(container_stats.iterrows()):
+        if idx < file_idx * plots_per_file or idx >= (file_idx + 1) * plots_per_file:
+            continue
+        median_text += f'{service}:\n' \
+                       f'   Median: {stats["50%"]:.2f}\n' \
+                       f'   25th Percentile: {stats["25%"]:.2f}\n' \
+                       f'   75th Percentile: {stats["75%"]:.2f}\n\n'
+
+    fig.text(1.02, 0.5, median_text, ha='left', va='center', fontsize=12, family='monospace')
 
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     output_file_path = os.path.join(data_dir, "plots", f"{container_name}_{test_name}_{config}_non_idle_exec_time_dist_{file_idx}.png")
