@@ -58,7 +58,8 @@ class SpanData:
         start_time = self.start_time
         end_time = self.end_time
         for child_start_time, child_end_time in children_start_end_times_to_consider:
-            self.non_idle_intervals.append((start_time, child_start_time))
+            if start_time < child_start_time:
+                self.non_idle_intervals.append((start_time, child_start_time))
             start_time = child_end_time
         self.non_idle_intervals.append((start_time, end_time))
 
