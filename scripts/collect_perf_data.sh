@@ -59,17 +59,17 @@ sudo perf record -o "${CONTAINER_NAME}.data" \
 echo "sudo perf script -i \"${CONTAINER_NAME}.data\" > perf_output.txt || exit 1"
 sudo perf script -i "${CONTAINER_NAME}.data" > perf_output.txt || exit 1
 
-LLC_DATA_CSV_PATH="$DATA_DIR/data/llc_data.csv"
+PERF_DATA_CSV_PATH="$DATA_DIR/data/perf_data.csv"
 
-echo "echo \"Time,Frequency,Type\" > $LLC_DATA_CSV_PATH"
-echo "Time,Frequency,Type" > $LLC_DATA_CSV_PATH
+echo "echo \"Time,Frequency,Type\" > $PERF_DATA_CSV_PATH"
+echo "Time,Frequency,Type" > $PERF_DATA_CSV_PATH
 
 echo "awk '/LLC-loads/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",LOAD\"} 
      /LLC-load-misses/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",MISS\"}
-     /instructions/ {gsub(\":\", \"\", \$3); print \$3 "," \$4 ",INSTRUCTIONS"}' perf_output.txt >> \"$LLC_DATA_CSV_PATH\" || exit 1"
+     /instructions/ {gsub(\":\", \"\", \$3); print \$3 "," \$4 ",INSTRUCTIONS"}' perf_output.txt >> \"$PERF_DATA_CSV_PATH\" || exit 1"
 awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"} 
      /LLC-load-misses/ {gsub(":", "", $3); print $3 "," $4 ",MISS"}
-     /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt >> "$LLC_DATA_CSV_PATH" || exit 1
+     /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt >> "$PERF_DATA_CSV_PATH" || exit 1
 
 echo "sudo rm -f \"${CONTAINER_NAME}.data\""
 sudo rm -f "${CONTAINER_NAME}.data"

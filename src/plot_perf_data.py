@@ -13,10 +13,10 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 def load_data(data_dir: str) -> pd.DataFrame:
-    llc_data_file: str = f"{data_dir}/data/llc_data.csv"
-    df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
-    df["Time"] = df["Time"] - df["Time"].min()
-    return df
+    perf_data_file: str = f"{data_dir}/data/perf_data.csv"
+    perf_df: pd.DataFrame = pd.read_csv(perf_data_file, sep=",")
+    perf_df["Time"] = perf_df["Time"] - perf_df["Time"].min()
+    return perf_df
 
 def calculate_percentiles(df: pd.DataFrame, data_type: str) -> Tuple[pd.DataFrame, float, float, float]:
     data: pd.DataFrame = df[df["Type"] == data_type]
@@ -90,11 +90,11 @@ def main() -> None:
     print(f"Config: {configs}")
     print(f"Data Directory: {data_dir}")
 
-    df: pd.DataFrame = load_data(data_dir)
+    perf_df: pd.DataFrame = load_data(data_dir)
     
-    loads, loads_median, loads_25th, loads_75th = calculate_percentiles(df, "LOAD")
-    misses, misses_median, misses_25th, misses_75th = calculate_percentiles(df, "MISS")
-    instructions, instructions_median, instructions_25th, instructions_75th = calculate_percentiles(df, "INSTRUCTIONS")
+    loads, loads_median, loads_25th, loads_75th = calculate_percentiles(perf_df, "LOAD")
+    misses, misses_median, misses_25th, misses_75th = calculate_percentiles(perf_df, "MISS")
+    instructions, instructions_median, instructions_25th, instructions_75th = calculate_percentiles(perf_df, "INSTRUCTIONS")
 
     plt.style.use('ggplot')
     

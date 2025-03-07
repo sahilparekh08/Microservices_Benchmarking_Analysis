@@ -28,6 +28,9 @@ class SpanData:
 
         # max duration considered for merged interval and not the whole merged interval
         # trying to replicate what jaeger traces do
+
+        # TODO: also add a list of start and end non-idle exec times for each child span
+        
         for child in self.children[1:]:
             if child.start_time < end_time:
                 end_time = max(end_time, child.end_time)

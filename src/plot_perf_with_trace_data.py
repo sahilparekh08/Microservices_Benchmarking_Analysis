@@ -13,7 +13,7 @@ def parse_arguments() -> argparse.Namespace:
     
     return parser.parse_args()
 
-def load_data(
+def load_traces_data(
         data_dir: str,
         service_name_for_traces: str,
         test_name: str,
@@ -26,6 +26,19 @@ def load_data(
     container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
     
     return container_jaeger_traces_df
+
+def load_perf_data(data_dir: str) -> pd.DataFrame:
+    llc_data_file: str = f"{data_dir}/data/perf_data.csv"
+    df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
+    df["Time"] = df["Time"] - df["Time"].min()
+    return df
+
+def create_trace_request_df(
+        container_jaeger_traces_df: pd.DataFrame,
+        service_name_for_traces: str
+        ) -> pd.DataFrame:
+    # group the data frames by trace id ad output a df which has start and end non idle times for a specific servicename
+    return pd.DataFrame()
 
 def main() -> None:
     args: argparse.Namespace = parse_arguments()
@@ -43,10 +56,12 @@ def main() -> None:
     print(f"Config: {config}")
     print(f"Data Directory: {data_dir}")
 
-    container_jaeger_traces_df = load_data(
+    container_jaeger_traces_df: pd.DataFrame = load_traces_data(
         data_dir, service_name_for_traces, test_name, config, container_name)
+    perf_df: pd.DataFrame = load_perf_data(data_dir)
+
+    # TODO: complete
     
-    # TODO complete this
 
 if __name__ == "__main__":
     main()
