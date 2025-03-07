@@ -74,4 +74,7 @@ awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"}
 echo "sudo rm -f \"${CONTAINER_NAME}.data\""
 sudo rm -f "${CONTAINER_NAME}.data"
 
+echo "sudo rm -f perf_output.txt"
+sudo rm -f perf_output.txt
+
 echo -e "Finished at $(date)\n"

@@ -3,106 +3,127 @@ import pandas as pd
 import argparse
 import numpy as np
 
-parser = argparse.ArgumentParser(description="Plot LLC Load, Miss, and Instruction Frequencies over Time.")
-parser.add_argument("--test-name", type=str, required=True, help="Test name")
-parser.add_argument("--container-name", type=str, required=True, help="Service name")
-parser.add_argument("--config", type=str, required=True, help="Configuration name")
-parser.add_argument("--data-dir", type=str, required=True, help="Directory containing LLC data")
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Plot LLC Load, Miss, and Instruction Frequencies over Time.")
+    parser.add_argument("--test-name", type=str, required=True, help="Test name")
+    parser.add_argument("--container-name", type=str, required=True, help="Service name")
+    parser.add_argument("--config", type=str, required=True, help="Configuration name")
+    parser.add_argument("--data-dir", type=str, required=True, help="Directory containing LLC data")
+    
+    return parser.parse_args()
 
-args = parser.parse_args()
+def load_data(data_dir):
+    llc_data_file = data_dir + "/data/llc_data.csv"
+    df = pd.read_csv(llc_data_file, sep=",")
+    df["Time"] = df["Time"] - df["Time"].min()
+    return df
 
-test_name = args.test_name.replace(" ", "_")
-container_name = args.container_name
-configs = args.config.replace(" ", "_")
-data_dir = args.data_dir
+def calculate_percentiles(df, data_type):
+    data = df[df["Type"] == data_type]
+    median = np.median(data["Frequency"])
+    p25 = np.percentile(data["Frequency"], 25)
+    p75 = np.percentile(data["Frequency"], 75)
+    return data, median, p25, p75
 
-print("Plotting LLC Load, Miss, and Instruction Frequencies over Time")
-print(f"Test Name: {test_name}")
-print(f"Container Name: {container_name}")
-print(f"Config: {configs}")
-print(f"Data Directory: {data_dir}")\
+def plot_data(axes, data, median, p25, p75, label, color, linestyle, position, title):
+    axes[position].plot(data["Time"], data["Frequency"], label=label, color=color, marker="o", linestyle=linestyle, markersize=4)
+    axes[position].axhline(median, color=color, linestyle="--", label=f"{title} Median", alpha=0.7)
+    axes[position].axhline(p25, color=color, linestyle=":", label=f"{title} 25th", alpha=0.5)
+    axes[position].axhline(p75, color=color, linestyle=":", label=f"{title} 75th", alpha=0.5)
 
-output_file_path = data_dir + "/plots/" + test_name + "_" + container_name + "_" + configs + ".png"
-llc_data_file = data_dir + "/data/llc_data.csv"
+def add_text_box(axes, idx, median, p25, p75, label, color, y_offset=0):
+    text = f'{label}\nMedian: {median:.2f}\n25th: {p25:.2f}\n75th: {p75:.2f}'
+    bbox_props = dict(
+        boxstyle="round,pad=0.5",
+        facecolor="white",
+        alpha=0.8,
+        edgecolor=color,
+        linewidth=2
+    )
+    axes[idx].annotate(
+        text,
+        xy=(1.02, 0.95 - y_offset),
+        xycoords='axes fraction',
+        fontsize=10,
+        verticalalignment='top',
+        horizontalalignment='left',
+        bbox=bbox_props
+    )
+    
+def save_plot(fig, output_file_path):
+    fig.tight_layout()
+    plt.savefig(output_file_path, bbox_inches='tight', dpi=300)
+    print(f"Plot saved as {output_file_path}")
 
-df = pd.read_csv(llc_data_file, sep=",")
+def main():
+    args = parse_arguments()
 
-df["Time"] = df["Time"] - df["Time"].min()
+    test_name = args.test_name.replace(" ", "_")
+    container_name = args.container_name
+    configs = args.config.replace(" ", "_")
+    data_dir = args.data_dir
+    output_file_path = data_dir + "/plots/" + test_name + "_" + container_name + "_" + configs + ".png"
 
-sample_print_limit = 20
-print(f"Loaded {len(df)} samples from {llc_data_file}, printing first {sample_print_limit} samples:")
-print(df.head(sample_print_limit))
+    print("Plotting LLC Load, Miss, and Instruction Frequencies over Time")
+    print(f"Test Name: {test_name}")
+    print(f"Container Name: {container_name}")
+    print(f"Config: {configs}")
+    print(f"Data Directory: {data_dir}")
 
-loads = df[df["Type"] == "LOAD"]
-misses = df[df["Type"] == "MISS"]
-instructions = df[df["Type"] == "INSTRUCTIONS"]
+    df = load_data(data_dir)
+    
+    loads, loads_median, loads_25th, loads_75th = calculate_percentiles(df, "LOAD")
+    misses, misses_median, misses_25th, misses_75th = calculate_percentiles(df, "MISS")
+    instructions, instructions_median, instructions_25th, instructions_75th = calculate_percentiles(df, "INSTRUCTIONS")
 
-num_loads = len(loads)
-num_misses = len(misses)
-num_instructions = len(instructions)
+    plt.style.use('ggplot')
+    
+    fig, axes = plt.subplots(2, 1, figsize=(12, 12))
 
-# TODO: have all plots have the same scale
+    plot_data(axes, loads, loads_median, loads_25th, loads_75th, 
+              f"LLC Loads ({len(loads)})", "blue", "-", 0, "Loads")
+    plot_data(axes, misses, misses_median, misses_25th, misses_75th, 
+              f"LLC Misses ({len(misses)})", "red", "-", 0, "Misses")
+    
+    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, 
+              f"Instructions ({len(instructions)})", "green", "-", 1, "Instr")
 
-fig, axes = plt.subplots(2, 1, figsize=(10, 10))
+    add_text_box(axes, 0, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", 0)
+    add_text_box(axes, 0, misses_median, misses_25th, misses_75th, "LLC Misses", "red", 0.25)
+    add_text_box(axes, 1, instructions_median, instructions_25th, instructions_75th, "Instructions", "green", 0)
 
-# Plot LLC Load and Misses on the first axes
-axes[0].plot(loads["Time"], loads["Frequency"], label=f"LLC Loads (Samples: {num_loads})", color="blue", marker="o", linestyle="-")
-axes[0].plot(misses["Time"], misses["Frequency"], label=f"LLC Misses (Samples: {num_misses})", color="red", marker="o", linestyle="-")
+    fig.suptitle(f"TEST: {test_name} | SERVICE: {container_name} | CONFIGS: {configs}", 
+                fontsize=14, fontweight='bold', y=0.98)
+    
+    axes[0].set_xlabel("Time (seconds)")
+    axes[0].set_ylabel("Frequency")
+    axes[0].set_title("LLC Loads and Misses over Time", fontsize=16, fontweight='bold', pad=50)
+    axes[0].grid(True, linestyle='--', alpha=0.7)
+    axes[0].set_ylim(bottom=0)
+    
+    handles, labels = axes[0].get_legend_handles_labels()
+    order = [0, 2, 4, 1, 3, 5]
+    handles = [handles[i] for i in order]
+    labels = [labels[i] for i in order]
+    axes[0].legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.15),
+              ncol=3, frameon=True, fontsize=9)
 
-loads_median = np.median(loads["Frequency"])
-misses_median = np.median(misses["Frequency"])
+    axes[1].set_xlabel("Time (seconds)")
+    axes[1].set_ylabel("Frequency")
+    axes[1].set_title("Instructions over Time", fontsize=16, fontweight='bold', pad=50)
+    axes[1].grid(True, linestyle='--', alpha=0.7)
+    axes[1].set_ylim(bottom=0)
+    
+    handles, labels = axes[1].get_legend_handles_labels()
+    order = [0, 1, 2, 3]
+    handles = [handles[i] for i in order]
+    labels = [labels[i] for i in order]
+    axes[1].legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.15),
+              ncol=2, frameon=True, fontsize=9)
 
-loads_25th = np.percentile(loads["Frequency"], 25)
-misses_25th = np.percentile(misses["Frequency"], 25)
+    plt.subplots_adjust(hspace=0.5, top=0.85)
+    
+    save_plot(fig, output_file_path)
 
-loads_75th = np.percentile(loads["Frequency"], 75)
-misses_75th = np.percentile(misses["Frequency"], 75)
-
-axes[0].axhline(loads_median, color="blue", linestyle="--", label="LLC Loads Median")
-axes[0].axhline(misses_median, color="red", linestyle="--", label="LLC Misses Median")
-axes[0].axhline(loads_25th, color="blue", linestyle=":", label="LLC Loads 25th Percentile")
-axes[0].axhline(misses_25th, color="red", linestyle=":", label="LLC Misses 25th Percentile")
-axes[0].axhline(loads_75th, color="blue", linestyle=":", label="LLC Loads 75th Percentile")
-axes[0].axhline(misses_75th, color="red", linestyle=":", label="LLC Misses 75th Percentile")
-
-axes[0].set_xlabel("Time (seconds)")
-axes[0].set_ylabel("Frequency")
-axes[0].set_title(f"TEST: {test_name}\nSERVICE: {container_name}        CONFIGS: {configs}")
-axes[0].grid()
-
-stats_text = (
-    f"LLC Loads Median: {loads_median:.2f}\n"
-    f"LLC Loads 25th: {loads_25th:.2f}, 75th: {loads_75th:.2f}\n"
-    f"LLC Misses Median: {misses_median:.2f}\n"
-    f"LLC Misses 25th: {misses_25th:.2f}, 75th: {misses_75th:.2f}"
-)
-fig.text(1.02, 0.75, stats_text, ha='left', va='top', fontsize=12, family='monospace')
-
-axes[0].legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12)
-
-axes[1].plot(instructions["Time"], instructions["Frequency"], label=f"Instructions (Samples: {num_instructions})", color="green", marker="o", linestyle="-")
-
-instructions_median = np.median(instructions["Frequency"])
-instructions_25th = np.percentile(instructions["Frequency"], 25)
-instructions_75th = np.percentile(instructions["Frequency"], 75)
-
-axes[1].axhline(instructions_median, color="green", linestyle="--", label="Instructions Median")
-axes[1].axhline(instructions_25th, color="green", linestyle=":", label="Instructions 25th Percentile")
-axes[1].axhline(instructions_75th, color="green", linestyle=":", label="Instructions 75th Percentile")
-
-axes[1].set_xlabel("Time (seconds)")
-axes[1].set_ylabel("Frequency")
-axes[1].set_title("Instructions over Time")
-axes[1].grid()
-
-instructions_text = (
-    f"Instructions Median: {instructions_median:.2f}\n"
-    f"Instructions 25th: {instructions_25th:.2f}, 75th: {instructions_75th:.2f}"
-)
-fig.text(1.02, 0.25, instructions_text, ha='left', va='top', fontsize=12, family='monospace')
-
-axes[1].legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12)
-
-plt.tight_layout(rect=[0, 0, 0.9, 1])
-plt.savefig(output_file_path)
-print(f"Plot saved as {output_file_path}")
+if __name__ == "__main__":
+    main()
