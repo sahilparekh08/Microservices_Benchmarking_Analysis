@@ -50,14 +50,19 @@ DURATION=$((DURATION + 5))
 
 echo -e "\nStarting at $(date)"
 
-echo "sudo perf record -o "${CONTAINER_NAME}.data" -e LLC-loads -e LLC-load-misses -e instructions -F 10000 -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) -- sleep $DURATION || exit 1"
+echo "sudo perf record -o "${CONTAINER_NAME}.data" \\
+    -e LLC-loads -e LLC-load-misses -e instructions -F 10000 \\
+    -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \\
+    --timestamp \\
+    -- sleep $DURATION || exit 1"
 sudo perf record -o "${CONTAINER_NAME}.data" \
     -e LLC-loads -e LLC-load-misses -e instructions -F 10000 \
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \
+    --timestamp \
     -- sleep $DURATION || exit 1
 
-echo "sudo perf script -i \"${CONTAINER_NAME}.data\" > perf_output.txt || exit 1"
-sudo perf script -i "${CONTAINER_NAME}.data" > perf_output.txt || exit 1
+echo "sudo perf script -i \"${CONTAINER_NAME}.data\" --ns > perf_output.txt || exit 1"
+sudo perf script -i "${CONTAINER_NAME}.data" --ns > perf_output.txt || exit 1
 
 PERF_DATA_CSV_PATH="$DATA_DIR/data/perf_data.csv"
 
