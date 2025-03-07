@@ -5,8 +5,9 @@ import seaborn as sns
 import math
 import os
 import numpy as np
+from typing import Tuple
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot Jaeger trace data for a given service.")
     parser.add_argument("--test-name", type=str, required=True, help="Test name")
     parser.add_argument("--service-name-for-traces", type=str, required=True, help="Service name for traces")
@@ -16,27 +17,44 @@ def parse_arguments():
     
     return parser.parse_args()
 
-def load_data(data_dir, service_name_for_traces, test_name, config, container_name):
-    jaeger_traces_csv_file_path = os.path.join(data_dir, "data", 
-                                               f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
-    jaeger_traces_df = pd.read_csv(jaeger_traces_csv_file_path)
-    container_jaeger_traces_df = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
-    container_stats = container_jaeger_traces_df.groupby('service')['non_idle_execution_time'].describe(
+def load_data(
+        data_dir: str,
+        service_name_for_traces: str,
+        test_name: str,
+        config: str,
+        container_name: str
+        ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+                                                    f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
+    jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)
+    container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
+    container_stats: pd.DataFrame = container_jaeger_traces_df.groupby('service')['non_idle_execution_time'].describe(
         percentiles=[.25, .5, .75])
-    unique_services = container_jaeger_traces_df['service'].unique()
+    unique_services: np.ndarray = container_jaeger_traces_df['service'].unique()
     
     return container_jaeger_traces_df, container_stats, unique_services
 
-def create_stats_text_box(ax, service, stats, position):
-    stats_text = (f"{service}\n"
-                 f"Median: {stats['50%']:.2f}\n"
-                 f"25th: {stats['25%']:.2f}\n"
-                 f"75th: {stats['75%']:.2f}")
-    props = dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='gray')
+def create_stats_text_box(
+        ax: plt.Axes,
+        service: str,
+        stats: pd.Series,
+        position: Tuple[float, float]
+        ) -> None:
+    stats_text: str = (f"{service}\n"
+                       f"Median: {stats['50%']:.2f}\n"
+                       f"25th: {stats['25%']:.2f}\n"
+                       f"75th: {stats['75%']:.2f}")
+    props: dict = dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='gray')
     ax.text(position[0], position[1], stats_text, transform=ax.transAxes,
             fontsize=10, verticalalignment='top', bbox=props)
 
-def plot_histogram(ax, data, service, stats, container_name):
+def plot_histogram(
+        ax: plt.Axes,
+        data: pd.Series,
+        service: str,
+        stats: pd.Series,
+        container_name: str
+        ) -> None:
     sns.set_style("whitegrid")
     
     sns.histplot(data, kde=True, ax=ax, color='steelblue', alpha=0.7)
@@ -55,14 +73,14 @@ def plot_histogram(ax, data, service, stats, container_name):
     ax.tick_params(axis='both', labelsize=8)
     ax.grid(True, linestyle='--', alpha=0.7)
 
-def main():
-    args = parse_arguments()
+def main() -> None:
+    args: argparse.Namespace = parse_arguments()
 
-    test_name = args.test_name.replace(" ", "_")
-    service_name_for_traces = args.service_name_for_traces
-    container_name = args.container_name
-    config = args.config.replace(" ", "_")
-    data_dir = args.data_dir
+    test_name: str = args.test_name.replace(" ", "_")
+    service_name_for_traces: str = args.service_name_for_traces
+    container_name: str = args.container_name
+    config: str = args.config.replace(" ", "_")
+    data_dir: str = args.data_dir
 
     print("Plotting Jaeger trace data")
     print(f"Test Name: {test_name}")
@@ -77,25 +95,20 @@ def main():
     print(f"Plotting Jaeger trace data for container [{container_name}] which covers the following services [{', '.join(unique_services)}]")
     print(f"Total traces: {len(container_jaeger_traces_df)}")
 
-    num_plots = len(container_stats)
-    plots_per_file = 4
-    num_files = math.ceil(num_plots / plots_per_file)
+    num_plots: int = len(container_stats)
+    plots_per_file: int = 4
+    num_files: int = math.ceil(num_plots / plots_per_file)
 
     for file_idx in range(num_files):
-        remaining_plots = min(plots_per_file, num_plots - file_idx * plots_per_file)
-        rows = math.ceil(remaining_plots / 2)
-        cols = min(2, remaining_plots)
+        remaining_plots: int = min(plots_per_file, num_plots - file_idx * plots_per_file)
+        rows: int = math.ceil(remaining_plots / 2)
+        cols: int = min(2, remaining_plots)
 
         plt.figure(figsize=(12, 10))
         fig, axs = plt.subplots(rows, cols, figsize=(12, 10))
         plt.style.use('ggplot')
         
-        if rows == 1 and cols == 1:
-            axs = np.array([[axs]])
-        elif rows == 1:
-            axs = np.expand_dims(axs, axis=0)
-        elif cols == 1:
-            axs = np.expand_dims(axs, axis=1)
+        axs = np.array(axs).reshape(rows, cols)
 
         fig.suptitle(
             f"Non-Idle Execution Time - {container_name}\nTest: {test_name} | Config: {config} | Page {file_idx + 1}/{num_files}", 
@@ -104,14 +117,14 @@ def main():
             fontweight='bold'
         )
 
-        plot_count = 0
+        plot_count: int = 0
         for idx, (service, stats) in enumerate(container_stats.iterrows()):
             if idx < file_idx * plots_per_file or idx >= (file_idx + 1) * plots_per_file:
                 continue
-            row = plot_count // cols
-            col = plot_count % cols
-            ax = axs[row, col]
-            service_data = container_jaeger_traces_df[
+            row: int = plot_count // cols
+            col: int = plot_count % cols
+            ax: plt.Axes = axs[row, col]
+            service_data: pd.Series = container_jaeger_traces_df[
                 container_jaeger_traces_df['service'] == service]['non_idle_execution_time']
             plot_histogram(ax, service_data, service, stats, container_name)
             plot_count += 1
@@ -122,7 +135,7 @@ def main():
         plt.tight_layout()
         plt.subplots_adjust(top=0.9, hspace=0.4, wspace=0.3)
         
-        output_file_path = os.path.join(
+        output_file_path: str = os.path.join(
             data_dir, 
             "plots", 
             f"{container_name}_{test_name}_{config}_non_idle_exec_time_dist_{file_idx}.png"
