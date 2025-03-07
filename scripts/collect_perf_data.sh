@@ -75,6 +75,7 @@ awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"}
      /LLC-load-misses/ {gsub(":", "", $3); print $3 "," $4 ",MISS"}
      /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt >> "$PERF_DATA_CSV_PATH" || exit 1
 
+BOOT_TIME=$(cat /proc/stat | grep btime | awk '{print $2}')
 echo -e "\nawk -v boot_time=$BOOT_TIME 'BEGIN {FS=","; OFS=","} NR > 1 { \\
     split(\$1, time_parts, \".\"); \\
     timestamp_ns = (boot_time + time_parts[1]) * 1000000000 + time_parts[2]; \\
