@@ -77,4 +77,4 @@ sudo rm -f "${CONTAINER_NAME}.data"
 echo "sudo rm -f perf_output.txt"
 sudo rm -f perf_output.txt
 
-echo -e "Finished at $(date)\n"
+echo "Finished at $(date)"
