@@ -87,7 +87,8 @@ def parse_and_save_traces(service_name_for_traces: str, data_dir_for_curr_run: s
                 "start_time": span.start_time,
                 "end_time": span.end_time,
                 "duration": span.duration,
-                "non_idle_execution_time": span_non_idle_execution_time
+                "non_idle_execution_time": span_non_idle_execution_time,
+                "non_idle_intervals": ";".join(f"{start}-{end}" for start, end in span.non_idle_intervals)
             })
 
     return pd.DataFrame(records)
