@@ -63,7 +63,6 @@ echo -e"\nsudo perf script -i \"${CONTAINER_NAME}.data\" --ns > perf_output.txt 
 sudo perf script -i "${CONTAINER_NAME}.data" --ns > perf_output.txt || exit 1
 
 PERF_DATA_CSV_PATH="$DATA_DIR/data/perf_data.csv"
-PERF_UPDATED_TS_CSV_PATH="$DATA_DIR/data/perf_updated_ts.csv"
 
 echo "echo \"Time,Frequency,Type\" > $PERF_DATA_CSV_PATH"
 echo "Time,Frequency,Type" > $PERF_DATA_CSV_PATH
@@ -78,16 +77,16 @@ awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"}
 BOOT_TIME=$(cat /proc/stat | grep btime | awk '{print $2}')
 echo -e "\nawk -v boot_time=$BOOT_TIME 'BEGIN {FS=","; OFS=","} NR > 1 { \\
     split(\$1, time_parts, \".\"); \\
-    timestamp_ns = (boot_time + time_parts[1]) * 1000000000 + time_parts[2]; \\
-    \$1 = timestamp_ns; \\
+    timestamp_microsecs = (boot_time + time_parts[1]) * 1000000 + time_parts[2]; \\
+    \$1 = timestamp_microsecs; \\
     print \$1, \$2, \$3 \\
-}' \"$PERF_DATA_CSV_PATH\" > \"$PERF_UPDATED_TS_CSV_PATH\""
+}' \"$PERF_DATA_CSV_PATH\" > \"$PERF_DATA_CSV_PATH\""
 awk -v boot_time=$BOOT_TIME 'BEGIN {FS=","; OFS=","} NR > 1 { \
     split($1, time_parts, "."); \
-    timestamp_ns = (boot_time + time_parts[1]) * 1000000000 + time_parts[2]; \
-    $1 = timestamp_ns; \
+    timestamp_microsecs = (boot_time + time_parts[1]) * 1000000 + time_parts[2]; \
+    $1 = timestamp_microsecs; \
     print $1, $2, $3 \
-}' "$PERF_DATA_CSV_PATH" > "$PERF_UPDATED_TS_CSV_PATH"
+}' "$PERF_DATA_CSV_PATH" > "$PERF_DATA_CSV_PATH"
 
 echo -e "\nsudo rm -f \"${CONTAINER_NAME}.data\""
 sudo rm -f "${CONTAINER_NAME}.data"
