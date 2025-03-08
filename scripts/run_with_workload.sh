@@ -50,6 +50,15 @@ make_dirs() {
     echo "mkdir -p $DATA_DIR/workload/$curr_time/plots"
     mkdir -p $DATA_DIR/workload/$curr_time/plots
 
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/plots/traces"
+    mkdir -p $DATA_DIR/workload/$curr_time/plots/traces
+
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/plots/perf"
+    mkdir -p $DATA_DIR/workload/$curr_time/plots/perf
+
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/plots/perf_with_traces"
+    mkdir -p $DATA_DIR/workload/$curr_time/plots/perf_with_traces
+
     echo "mkdir -p $LOG_DIR"
     mkdir -p $LOG_DIR
 }
@@ -162,6 +171,12 @@ echo "Running execute_workload_on_local.sh in background with logs saved at $RUN
 $SCRIPTS_DIR/execute_workload_on_local.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --test-name "$TEST_NAME" --config "$CONFIG" > "$RUN_WORKLOAD_ON_LOCAL_LOG_PATH" 2>&1 &
 echo -e "--------------------------------------------------\n"
 
+# Doesnt work
+# echo "--------------------------------------------------"
+# echo "Running collect_ebpf_data.sh"
+# sudo $SCRIPTS_DIR/collect_ebpf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+# echo -e "--------------------------------------------------\n"
+
 echo "--------------------------------------------------"
 echo "Running collect_perf_data.sh"
 $SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
@@ -170,7 +185,7 @@ echo -e "--------------------------------------------------\n"
 echo "sleep 5"
 sleep 5
 
-echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \$4}' > \"$DATA_DIR/docker_container_service_config.csv\")"
+echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \$4}' > \"$DATA_DIR/docker_container_service_config.csv\")"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose ps | awk '{print $1 "," $4}' > "$DATA_DIR/docker_container_service_config.csv")
 
 echo -e "\n--------------------------------------------------"

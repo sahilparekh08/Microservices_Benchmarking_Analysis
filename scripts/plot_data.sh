@@ -48,51 +48,62 @@ fi
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
 
+PLOT_BASE_DIR="$DATA_DIR/plots"
+
+PLOT_DIR="$PLOT_BASE_DIR/perf"
 PLOT_PERF_DATA_LOG_PATH="$DATA_DIR/logs/plot_perf_data.log"
 echo -e "python3 $SRC_DIR/plot_perf_data.py  \\
     --test-name \"${TEST_NAME}\" \\
     --container-name \"${CONTAINER_NAME}\" \\ 
     --config \"${CONFIG}\" \\
-    --data-dir \"${DATA_DIR}\" > $PLOT_PERF_DATA_LOG_PATH 2>&1"
+    --data-dir \"${DATA_DIR}\" \\
+    --plot-dir \"${PLOT_DIR}\" > $PLOT_PERF_DATA_LOG_PATH 2>&1"
 python3 "$SRC_DIR/plot_perf_data.py" \
     --test-name "${TEST_NAME}" \
     --container-name "${CONTAINER_NAME}" \
     --config "${CONFIG}" \
-    --data-dir "${DATA_DIR}" > "$PLOT_PERF_DATA_LOG_PATH" 2>&1 || {
+    --data-dir "${DATA_DIR}" \
+    --plot-dir "${PLOT_DIR}" > $PLOT_PERF_DATA_LOG_PATH 2>&1 || {
     echo "Error: Failed to plot performance data. See $PLOT_PERF_DATA_LOG_PATH for details."
     exit 1
 }
 
+PLOT_DIR="$PLOT_BASE_DIR/traces"
 PLOT_JAEGER_DATA_LOG_PATH="$DATA_DIR/logs/plot_jaeger_data.log"
 echo -e "\npython3 $SRC_DIR/plot_jaeger_data.py \\
     --test-name \"${TEST_NAME}\" \\
     --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
     --container-name \"${CONTAINER_NAME}\" \\
     --config \"${CONFIG}\" \\
-    --data-dir \"${DATA_DIR}\" > $PLOT_JAEGER_DATA_LOG_PATH 2>&1"
+    --data-dir \"${DATA_DIR}\" \\
+    --plot-dir \"${PLOT_DIR}\" > $PLOT_JAEGER_DATA_LOG_PATH 2>&1"
 python3 "$SRC_DIR/plot_jaeger_data.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
     --container-name "${CONTAINER_NAME}" \
     --config "${CONFIG}" \
-    --data-dir "${DATA_DIR}" > "$PLOT_JAEGER_DATA_LOG_PATH" 2>&1 || {
+    --data-dir "${DATA_DIR}" \
+    --plot-dir "${PLOT_DIR}" > $PLOT_JAEGER_DATA_LOG_PATH 2>&1 || {
     echo "Error: Failed to plot Jaeger data. See $PLOT_JAEGER_DATA_LOG_PATH for details."
     exit 1
 }
 
+PLOT_DIR="$PLOT_BASE_DIR/perf_with_traces"
 PLOT_PERF_WITH_TRACE_DATA_LOG_PATH="$DATA_DIR/logs/plot_perf_with_trace_data.log"
 echo -e "\npython3 $SRC_DIR/plot_perf_with_trace_data.py \\
     --test-name \"${TEST_NAME}\" \\
     --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
     --container-name \"${CONTAINER_NAME}\" \\
     --config \"${CONFIG}\" \\
-    --data-dir \"${DATA_DIR}\" > $PLOT_PERF_WITH_TRACE_DATA_LOG_PATH 2>&1"
+    --data-dir \"${DATA_DIR}\" \\
+    --plot-dir \"${PLOT_DIR}\" > $PLOT_PERF_WITH_TRACE_DATA_LOG_PATH 2>&1"
 python3 "$SRC_DIR/plot_perf_with_trace_data.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
     --container-name "${CONTAINER_NAME}" \
     --config "${CONFIG}" \
-    --data-dir "${DATA_DIR}" > "$PLOT_PERF_WITH_TRACE_DATA_LOG_PATH" 2>&1 || {
+    --data-dir "${DATA_DIR}" \
+    --plot-dir "${PLOT_DIR}" > "$PLOT_PERF_WITH_TRACE_DATA_LOG_PATH" 2>&1 || {
     echo "Error: Failed to plot performance data with traces. See $PLOT_PERF_WITH_TRACE_DATA_LOG_PATH for details."
     exit 1
 }

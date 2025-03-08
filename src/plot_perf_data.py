@@ -10,6 +10,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--container-name", type=str, required=True, help="Service name")
     parser.add_argument("--config", type=str, required=True, help="Configuration name")
     parser.add_argument("--data-dir", type=str, required=True, help="Directory containing LLC data")
+    parser.add_argument("--plot-dir", type=str, required=True, help="Directory to save plots")
     return parser.parse_args()
 
 def load_data(data_dir: str) -> pd.DataFrame:
@@ -37,7 +38,7 @@ def plot_data(
     position: int,
     title: str
 ) -> None:
-    axes[position].plot(data["Time"], data["Frequency"], label=label, color=color, marker="o", linestyle=linestyle, markersize=4)
+    axes[position].scatter(data["Time"], data["Frequency"], label=label, color=color, marker="o", s=16)  
     axes[position].axhline(median, color=color, linestyle="--", label=f"{title} Median", alpha=0.7)
     axes[position].axhline(p25, color=color, linestyle=":", label=f"{title} 25th", alpha=0.5)
     axes[position].axhline(p75, color=color, linestyle=":", label=f"{title} 75th", alpha=0.5)
@@ -82,13 +83,15 @@ def main() -> None:
     container_name: str = args.container_name
     configs: str = args.config.replace(" ", "_")
     data_dir: str = args.data_dir
-    output_file_path: str = f"{data_dir}/plots/{test_name}_{container_name}_{configs}.png"
+    plot_dir: str = args.plot_dir
+    output_file_path: str = f"{plot_dir}/{test_name}_{container_name}_{configs}.png"
 
     print("Plotting LLC Load, Miss, and Instruction Frequencies over Time")
     print(f"Test Name: {test_name}")
     print(f"Container Name: {container_name}")
     print(f"Config: {configs}")
     print(f"Data Directory: {data_dir}")
+    print(f"Output File Path: {output_file_path}")
 
     perf_df: pd.DataFrame = load_data(data_dir)
     

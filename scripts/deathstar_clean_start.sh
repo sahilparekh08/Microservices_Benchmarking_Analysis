@@ -33,18 +33,18 @@ fi
 echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down) || exit 1"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose down) || exit 1
 
-echo "docker volume prune -f"
+echo -e "\ndocker volume prune -f"
 docker volume prune -f
 
-echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d) || exit 1"
+echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d) || exit 1"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose up -d) || exit 1
 
 if [[ "$(basename "$DOCKER_COMPOSE_DIR")" = "socialNetwork" ]]; then
 	if [[ -z "$LOG_DIR" ]]; then
-		echo "(cd \"$DOCKER_COMPOSE_DIR\" && python3 \"scripts/init_social_graph.py\" --graph=socfb-Reed98)"
+		echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && python3 \"scripts/init_social_graph.py\" --graph=socfb-Reed98)"
 		(cd "$DOCKER_COMPOSE_DIR" && python3 "scripts/init_social_graph.py" --graph=socfb-Reed98)
 	else
-		echo "(cd \"$DOCKER_COMPOSE_DIR\" && python3 \"scripts/init_social_graph.py\" --graph=socfb-Reed98) > \"$LOG_DIR/init_social_graph.log\" 2>&1"
+		echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && python3 \"scripts/init_social_graph.py\" --graph=socfb-Reed98) > \"$LOG_DIR/init_social_graph.log\" 2>&1"
 		(cd "$DOCKER_COMPOSE_DIR" && python3 "scripts/init_social_graph.py" --graph=socfb-Reed98) > "$LOG_DIR/init_social_graph.log" 2>&1
 	fi
 fi
