@@ -29,6 +29,10 @@ def process_traces(service_name_for_traces: str, data_dir :str, limit: int, test
 
     curr_data_dir = os.path.join(data_dir, "data")
     df = parse_and_save_traces(service_name_for_traces, curr_data_dir, trace_ids, save_traces_json)
+    if df is None:
+        print(f"[ERROR:] No traces found for service '{service_name_for_traces}'")
+        SystemExit(1)
+
     df['container_name'] = df['service'].apply(lambda x: jaeger_service_to_container_mapping[x] if x in jaeger_service_to_container_mapping else None)
 
     test_name = test_name.replace(" ", "_")

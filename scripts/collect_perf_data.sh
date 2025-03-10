@@ -55,14 +55,14 @@ BOOT_TIME="$(cat /proc/stat | grep btime | awk '{print $2}')"
 echo -e "\nStarting perf data collection at $(date)"
 echo "sudo perf record -o "${CONTAINER_NAME}.data" \\
     -e LLC-loads -e LLC-load-misses -e instructions \\
-    -F 10000 \\
+    -F 20000 \\
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \\
     -k CLOCK_MONOTONIC \\
     --timestamp \\
     -- sleep $DURATION || exit 1"
 sudo perf record -o "${CONTAINER_NAME}.data" \
     -e LLC-loads -e LLC-load-misses -e instructions \
-    -F 10000 \
+    -F 20000 \
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \
     -k CLOCK_MONOTONIC \
     --timestamp \
