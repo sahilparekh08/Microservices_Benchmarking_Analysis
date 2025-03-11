@@ -46,7 +46,7 @@ if [[ $DURATION -eq 0 ]]; then
     exit 1
 fi
 
-DURATION=$((DURATION + 5))
+DURATION=$((DURATION + 2))
 
 echo -e "\nStarting at $(date)"
 
@@ -55,14 +55,14 @@ BOOT_TIME="$(cat /proc/stat | grep btime | awk '{print $2}')"
 echo -e "\nStarting perf data collection at $(date)"
 echo "sudo perf record -o "${CONTAINER_NAME}.data" \\
     -e LLC-loads -e LLC-load-misses -e instructions \\
-    -F 20000 \\
+    -F 40000 \\
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \\
     -k CLOCK_MONOTONIC \\
     --timestamp \\
     -- sleep $DURATION || exit 1"
 sudo perf record -o "${CONTAINER_NAME}.data" \
     -e LLC-loads -e LLC-load-misses -e instructions \
-    -F 20000 \
+    -F 40000 \
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \
     -k CLOCK_MONOTONIC \
     --timestamp \

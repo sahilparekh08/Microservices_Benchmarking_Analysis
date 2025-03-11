@@ -72,12 +72,15 @@ def plot_perf_with_traces(
     transformed_traces_df: pd.DataFrame,
     perf_df: pd.DataFrame,
     output_dir: str,
-    num_samples: int
+    num_samples: int,
+    config: str
 ) -> None:
     perf_df["Time"] = perf_df["Time"].astype(float)
     transformed_traces_df["start_time"] = transformed_traces_df["start_time"].astype(float)
     transformed_traces_df["end_time"] = transformed_traces_df["end_time"].astype(float)
     num_plots = 0
+
+    print(f"Trying to plot [{len(transformed_traces_df)}] traces")
 
     for _, trace in transformed_traces_df.iterrows():
         if num_plots == num_samples:
@@ -96,38 +99,50 @@ def plot_perf_with_traces(
             continue
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
-        plot_perf_df_load = plot_perf_df[plot_perf_df["Type"] == "LOAD"]
-        plot_perf_df_miss = plot_perf_df[plot_perf_df["Type"] == "MISS"]
-        plot_perf_df_instructions = plot_perf_df[plot_perf_df["Type"] == "INSTRUCTIONS"]
 
-        axs[0].scatter(plot_perf_df_load["Time"], plot_perf_df_load["Frequency"], s=10, alpha=0.7, label="LLC Loads")
-        axs[0].scatter(plot_perf_df_miss["Time"], plot_perf_df_miss["Frequency"], s=10, alpha=0.7, label="LLC Misses")
+        zoom_margin = 0.001
+        zoomed_plot_perf_df = perf_df[
+            (perf_df["Time"] >= trace_start - zoom_margin) & 
+            (perf_df["Time"] <= trace_end + zoom_margin)
+        ]
+
+        fig, axs = plt.subplots(2, 1, figsize=(15, 10))
+
+        zoomed_plot_perf_df_load = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "LOAD"]
+        zoomed_plot_perf_df_miss = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "MISS"]
+        zoomed_plot_perf_df_instructions = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "INSTRUCTIONS"]
+
+        axs[0].scatter(zoomed_plot_perf_df_load["Time"], zoomed_plot_perf_df_load["Frequency"], s=10, alpha=0.7, label="LLC Loads")
+        axs[0].scatter(zoomed_plot_perf_df_miss["Time"], zoomed_plot_perf_df_miss["Frequency"], s=10, alpha=0.7, label="LLC Misses")
         axs[0].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
-        axs[0].set_title("LLC Loads and LLC Misses")
+        axs[0].set_title("LLC Loads and LLC Misses (Zoomed In)")
         axs[0].set_xlabel("Time (microseconds)")
         axs[0].set_ylabel("Count")
         axs[0].legend()
-        
-        axs[1].scatter(plot_perf_df_instructions["Time"], plot_perf_df_instructions["Frequency"], s=10, alpha=0.7, label="Instructions")
-        axs[0].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
-        axs[1].set_title("Instructions")
+
+        axs[1].scatter(zoomed_plot_perf_df_instructions["Time"], zoomed_plot_perf_df_instructions["Frequency"], s=10, alpha=0.7, label="Instructions")
+        axs[1].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
+        axs[1].set_title("Instructions (Zoomed In)")
         axs[1].set_xlabel("Time (microseconds)")
         axs[1].set_ylabel("Count")
         axs[1].legend()
 
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/trace_{num_plots+1}_perf_plot.png")
+        plt.savefig(f"{output_dir}/trace_{num_plots+1}_{config}_zoomed_perf_plot.png")
         plt.close()
 
         num_plots += 1
 
-        print(f"Scatter plot saved to {output_dir}/trace_{i+1}_perf_plot.png")
+        print(f"Plots saved to {output_dir}/trace_{num_plots}_perf_plot.png and {output_dir}/trace_{num_plots}_zoomed_perf_plot.png")
 
 def plot_traces_start_end_times_and_perf_data(
     container_traces_df: pd.DataFrame,
     perf_df: pd.DataFrame,
     output_dir: str
 ) -> None:
+    delta = 0.0001
+    threshold = 0.001
+
     plt.figure(figsize=(15, 5))
     transformed_perf_df = perf_df[perf_df["Type"] == "INSTRUCTIONS"]
     transformed_traces_df = get_transformed_traces_df(container_traces_df)
@@ -146,10 +161,16 @@ def plot_traces_start_end_times_and_perf_data(
     plt.xlim(min_perf_time, max_perf_time)
     
     for _, trace in transformed_traces_df.iterrows():
-        plt.axvline(trace["start_time"], color='red', linestyle='--', label="Trace Start")
-        plt.axvline(trace["end_time"], color='blue', linestyle='--', label="Trace End")
+        start_time = trace["start_time"]
+        end_time = trace["end_time"]
+
+        if abs(end_time - start_time) < threshold:
+            end_time += delta  
+
+        plt.axvline(start_time, color='red', linestyle='--', label="Trace Start")
+        plt.axvline(end_time, color='blue', linestyle=':', label="Trace End")
     
-    plt.title("Trace Start (red) / End (blue) Times and Instructions (green)")
+    plt.title("Trace Start (red --) / End (blue :) Times and Instructions (green)")
     plt.xlabel("Time (microseconds)")
     plt.ylabel("Count")
     plt.savefig(f"{output_dir}/traces_instructions_plot.png")
@@ -190,13 +211,8 @@ def main() -> None:
         plot_dir
     )
 
-    sampled_traces = get_samples(container_jaeger_traces_df, perf_df, samples)
-    if sampled_traces.empty:
-        print(f"No eligible sample traces found for {container_name}")
-        return
-
     transformed_traces_df = get_transformed_traces_df(container_jaeger_traces_df)
-    plot_perf_with_traces(transformed_traces_df, perf_df, plot_dir, samples)
+    plot_perf_with_traces(transformed_traces_df, perf_df, plot_dir, samples, config)
     
     print("Plot generation complete.")
 
