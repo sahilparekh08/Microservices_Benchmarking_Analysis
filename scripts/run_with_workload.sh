@@ -24,7 +24,7 @@ usage() {
     echo "  --container-name \"socialnetwork-user-timeline-service-1\""
     echo "  --service-name-for-traces \"user-timeline-service\""
     echo "  --test-name \"Compose Post\""
-    echo "  --config \"t12 c400 d300 R10\""
+    echo "  --config \"t12 c400 d300 R10 cp2\""
     echo "  --docker-compose-dir \"~/workspace/DeathStarBench/socialNetwork\""
     echo "Optional args:"
     echo "  --jaeger-traces-limit 100"

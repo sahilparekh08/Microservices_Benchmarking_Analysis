@@ -45,6 +45,9 @@ for i in "${CONFIG[@]}"; do
         t*)
             THREADS="${i:1}"
             ;;
+        cp*)
+            echo "Cache partitions: ${i:2}"
+            ;;
         c*)
             CLIENTS="${i:1}"
             ;;
@@ -66,8 +69,8 @@ if [[ $THREADS -eq 0 || $CLIENTS -eq 0 || $DURATION -eq 0 || $RATE -eq 0 ]]; the
     usage
 fi
 
-echo "sleep 2"
-sleep 2
+echo "sleep 4"
+sleep 4
 
 if [[ "$(basename "$DOCKER_COMPOSE_DIR")" == "socialNetwork" ]]; then
     echo -e "\nWorkload started at $(date)\n"

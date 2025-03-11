@@ -34,7 +34,6 @@ def plot_data(
     p75: float,
     label: str,
     color: str,
-    linestyle: str,
     position: int,
     title: str
 ) -> None:
@@ -103,9 +102,9 @@ def main() -> None:
     
     fig, axes = plt.subplots(2, 1, figsize=(12, 12))
 
-    plot_data(axes, loads, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", "-", 0, "Loads")
-    plot_data(axes, misses, misses_median, misses_25th, misses_75th, "LLC Misses", "red", "-", 0, "Misses")
-    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, "Instructions", "green", "-", 1, "Instr")
+    plot_data(axes, loads, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", 0, "Loads")
+    plot_data(axes, misses, misses_median, misses_25th, misses_75th, "LLC Misses", "red", 0, "Misses")
+    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, "Instructions", "green", 1, "Instr")
 
     add_text_box(axes, 0, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", 0)
     add_text_box(axes, 0, misses_median, misses_25th, misses_75th, "LLC Misses", "red", 0.25)
