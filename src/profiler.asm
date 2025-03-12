@@ -1,5 +1,5 @@
 .section .data
-    fmt_str:   .asciz "%llu, %llu, %llu, %llu\n"  # Format: Timestamp, LLC Loads, LLC Misses, Instructions
+    fmt_str:   .asciz "%llu,%llu,%llu,%llu\n"  # Format: Timestamp, LLC Loads, LLC Misses, Instructions
 
 .section .bss
     fd:    .quad 0

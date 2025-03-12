@@ -48,7 +48,7 @@ fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
-PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/DATA/profile_data"
+PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/DATA/profile_data.csv"
 
 DURATION=$((DURATION + 2))
 
