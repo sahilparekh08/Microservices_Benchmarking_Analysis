@@ -17,6 +17,7 @@ DOCKER_COMPOSE_DIR=""
 JAEGER_TRACES_LIMIT=1
 SAVE_TRACES_JSON=false
 DATA_DIR_PARENT=""
+CORE="7"
 
 usage() {    
     echo "Usage: $0 [args]"
@@ -26,6 +27,7 @@ usage() {
     echo "  --test-name \"Compose Post\""
     echo "  --config \"t12 c400 d300 R10 cp2\""
     echo "  --docker-compose-dir \"~/workspace/DeathStarBench/socialNetwork\""
+    echo "  --core-to-profile 7"
     echo "Optional args:"
     echo "  --jaeger-traces-limit 100"
     echo "  --save-traces-json"
@@ -101,6 +103,10 @@ while [[ $# -gt 0 ]]; do
             DOCKER_COMPOSE_DIR="$2"
             shift 2
             ;;
+        --core-to-profile)
+            CORE="$2"
+            shift 2
+            ;;
         --jaeger-traces-limit)
             JAEGER_TRACES_LIMIT="$2"
             shift 2
@@ -123,7 +129,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" ]]; then
+if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" || -z "$CORE" ]]; then
     usage
 fi
 
@@ -166,21 +172,21 @@ echo "sleep 5"
 sleep 5
 
 echo -e "\n--------------------------------------------------"
+# NOTE: Edit grub file to specific isolcpus=<cpu number> for the container to profile and then reboot
 RUN_WORKLOAD_ON_LOCAL_LOG_PATH="$LOG_DIR/run_workload_on_local_output.log"
 echo "Running execute_workload_on_local.sh in background with logs saved at $RUN_WORKLOAD_ON_LOCAL_LOG_PATH"
 $SCRIPTS_DIR/execute_workload_on_local.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --test-name "$TEST_NAME" --config "$CONFIG" > "$RUN_WORKLOAD_ON_LOCAL_LOG_PATH" 2>&1 &
 echo -e "--------------------------------------------------\n"
 
-# Doesnt work
 # echo "--------------------------------------------------"
-# echo "Running collect_ebpf_data.sh"
-# sudo $SCRIPTS_DIR/collect_ebpf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+# echo "Running collect_perf_data.sh"
+# $SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
 # echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
-echo "Running collect_perf_data.sh"
-$SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
-echo -e "--------------------------------------------------\n"
+echo "Running profile_core.sh"
+$SCRIPTS_DIR/profile_core.sh --core $CORE --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+echo "--------------------------------------------------"
 
 echo "sleep 5"
 sleep 5
