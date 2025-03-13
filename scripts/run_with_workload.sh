@@ -159,6 +159,9 @@ DATA_DIR_PARENT="$DATA_DIR"
 DATA_DIR="$DATA_DIR/workload/$curr_time"
 echo -e "\nNew DATA_DIR: $DATA_DIR"
 
+echo "chmod +x $SCRIPTS_DIR/*"
+chmod +x $SCRIPTS_DIR/*
+
 echo -e "\n--------------------------------------------------"
 echo "Running deathstar_clean_start.sh"
 $SCRIPTS_DIR/deathstar_clean_start.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --log-dir "$LOG_DIR" || exit 1
@@ -182,6 +185,11 @@ echo -e "--------------------------------------------------\n"
 # echo "--------------------------------------------------"
 # echo "Running collect_perf_data.sh"
 # $SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+# echo -e "--------------------------------------------------\n"
+
+# echo "--------------------------------------------------"
+# echo "Running profile_core_assembly.sh"
+# $SCRIPTS_DIR/profile_core_assembly.sh --core $CORE --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
 # echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
