@@ -13,8 +13,16 @@
 #include <errno.h>
 
 #define SAMPLE_INTERVAL_MICROS 10
+#define BUFFER_SIZE 10000
 
-int perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+typedef struct pmc_data {
+    uint64_t timestamp;
+    uint64_t llc_loads;
+    uint64_t llc_misses;
+    uint64_t instructions;
+} pmc_data_t;
+
+static inline int perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
     return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
 }
 
@@ -91,12 +99,14 @@ int main(int argc, char *argv[]) {
     ioctl(fd_llc_misses, PERF_EVENT_IOC_ENABLE, 0);
     ioctl(fd_instructions, PERF_EVENT_IOC_ENABLE, 0);
 
+    pmc_data_t buffer[BUFFER_SIZE];
+    int buffer_index = 0;
+
     struct timespec start_time, current_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
     uint64_t llc_loads_prev = 0, llc_misses_prev = 0, instructions_prev = 0;
 
     printf("Profiling for %d seconds\n", run_seconds);
-
     struct timespec real_start_time;
     clock_gettime(CLOCK_REALTIME, &real_start_time);
     printf("Profiling started at %ld.%09ld\n", real_start_time.tv_sec, real_start_time.tv_nsec);
@@ -118,14 +128,42 @@ int main(int argc, char *argv[]) {
         uint64_t llc_misses = llc_misses_curr - llc_misses_prev;
         uint64_t instructions = instructions_curr - instructions_prev;
 
-        fprintf(fp, "%ld%ld,%lu,%lu,%lu\n", real_time.tv_sec, real_time.tv_nsec / 1000, llc_loads, llc_misses, instructions);
-        fflush(fp);
+        buffer[buffer_index].timestamp = (uint64_t)real_time.tv_sec * 1000000 + real_time.tv_nsec / 1000;
+        buffer[buffer_index].llc_loads = llc_loads;
+        buffer[buffer_index].llc_misses = llc_misses;
+        buffer[buffer_index].instructions = instructions;
+        buffer_index++;
+
+        if (buffer_index >= BUFFER_SIZE) {
+            for (int i = 0; i < buffer_index; i++) {
+                fprintf(fp, "%lu,%lu,%lu,%lu\n", 
+                        buffer[i].timestamp, 
+                        buffer[i].llc_loads, 
+                        buffer[i].llc_misses, 
+                        buffer[i].instructions
+                );
+            }
+            fflush(fp);
+            buffer_index = 0;
+        }
 
         usleep(SAMPLE_INTERVAL_MICROS);
 
         llc_loads_prev = llc_loads_curr;
         llc_misses_prev = llc_misses_curr;
         instructions_prev = instructions_curr;
+    }
+
+    if (buffer_index > 0) {
+        for (int i = 0; i < buffer_index; i++) {
+            fprintf(fp, "%lu,%lu,%lu,%lu\n", 
+                    buffer[i].timestamp, 
+                    buffer[i].llc_loads, 
+                    buffer[i].llc_misses, 
+                    buffer[i].instructions
+            );
+        }
+        fflush(fp);
     }
     
     struct timespec real_end_time;

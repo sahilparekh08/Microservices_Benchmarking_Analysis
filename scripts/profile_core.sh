@@ -61,13 +61,5 @@ echo "sudo $SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH > $LO
 sudo $SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/profile.log 2>&1
 echo "Finished at $(date)"
 
-LEN_PROFILE_DATA=$(wc -l < "$PROFILE_DATA_OUTPUT_PATH")
-LEN_PROFILE_DATA=$((LEN_PROFILE_DATA - 1))
-if [[ $LEN_PROFILE_DATA -eq 0 ]]; then
-    echo "No data collected, check $LOG_DIR/profile.log for details"
-    exit 1
-fi
-echo "Collected $LEN_PROFILE_DATA lines of data"
-
 echo -e "\nrm $SRC_DIR/profile_core"
 rm $SRC_DIR/profile_core
