@@ -32,9 +32,9 @@ def load_data(
     per_service_operation_stats: pd.DataFrame = (
         container_jaeger_traces_df
         .groupby(['service', 'operation'])['non_idle_execution_time']
-        .describe(percentiles=[.25, .5, .75])
+        .describe(percentiles=[.25, .5, .75, .99])
         .reset_index()
-        .rename(columns={'50%': 'median', '25%': 'q25', '75%': 'q75'})
+        .rename(columns={'50%': 'median', '25%': 'q25', '75%': 'q75', '99%': 'p99'})
     )
     unique_services: np.ndarray = container_jaeger_traces_df['service'].unique()
     return container_jaeger_traces_df, per_service_operation_stats, unique_services
@@ -48,7 +48,8 @@ def create_stats_text_box(
     stats_text: str = (f"{operation}\n"
                    f"Median: {stats['median']:.2f}\n"
                    f"25th: {stats['q25']:.2f}\n"
-                   f"75th: {stats['q75']:.2f}")
+                   f"75th: {stats['q75']:.2f}\n"
+                   f"99th: {stats['p99']:.2f}")
     props: dict = dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='gray')
     ax.text(position[0], position[1], stats_text, transform=ax.transAxes,
             fontsize=10, verticalalignment='top', bbox=props)
@@ -66,9 +67,10 @@ def plot_histogram(
     
     sns.histplot(data, kde=True, ax=ax, color='steelblue', alpha=0.7)
     
-    ax.axvline(stats['median'], color='red', linestyle='--', linewidth=1.5)
-    ax.axvline(stats['q25'], color='green', linestyle='--', linewidth=1.5)
-    ax.axvline(stats['q75'], color='blue', linestyle='--', linewidth=1.5)
+    ax.axvline(stats['median'], color='red', linestyle='--', linewidth=1.5, label='Median')
+    ax.axvline(stats['q25'], color='green', linestyle='--', linewidth=1.5, label='25th Percentile')
+    ax.axvline(stats['q75'], color='blue', linestyle='--', linewidth=1.5, label='75th Percentile')
+    ax.axvline(stats['p99'], color='purple', linestyle='--', linewidth=1.5, label='99th Percentile') 
     
     ax.set_title(f'{operation}', fontsize=12, fontweight='bold', pad=10)
     ax.set_xlabel('Non-Idle Execution Time', fontsize=10)
@@ -80,6 +82,9 @@ def plot_histogram(
     
     ax.tick_params(axis='both', labelsize=8)
     ax.grid(True, linestyle='--', alpha=0.7)
+
+    if len(operation) < 20:
+        ax.legend(loc='upper left', fontsize=8)
 
 def plot_jaeger_service_data(
         container_jaeger_traces_df: pd.DataFrame, 

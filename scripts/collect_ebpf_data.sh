@@ -51,13 +51,13 @@ DURATION=$((DURATION + 5))
 echo -e "\nStarting at $(date)"
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
+PROFILE_SRC_DIR="$(realpath "$SCRIPTS_DIR/../src/profile")"
 
-echo -e "\npython3 $SRC_DIR/collect_ebpf_data.py \\
+echo -e "\npython3 $PROFILE_SRC_DIR/collect_ebpf_data.py \\
     --pid $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \\
     --duration $DURATION \\
     --output \"$DATA_DIR/data/ebpf_data.csv\""
-sudo python3 "$SRC_DIR/collect_ebpf_data.py" \
+sudo python3 "$PROFILE_SRC_DIR/collect_ebpf_data.py" \
     --pid $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \
     --duration $DURATION \
     --output "$DATA_DIR/data/ebpf_data.csv"

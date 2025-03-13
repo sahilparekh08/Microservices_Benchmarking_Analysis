@@ -106,17 +106,30 @@ def plot_profile_with_traces(
             (profile_df["Time"] <= trace_end + zoom_margin)
         ]
 
+        zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].astype(float)
+        zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].astype(float)
+        zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].astype(float)
+
+        zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].replace(0, np.nan)
+        zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].replace(0, np.nan)
+        zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].replace(0, np.nan)
+
+        zoomed_plot_profile_df = zoomed_plot_profile_df.dropna(subset=["LLC-loads", "LLC-misses", "Instructions"])
+        zoomed_plot_profile_df = zoomed_plot_profile_df.sort_values(by="Time")
+        zoomed_plot_profile_df['Time'] = zoomed_plot_profile_df['Time'].astype(int)
+        zoomed_plot_profile_df['Time'] = zoomed_plot_profile_df['Time'] - zoomed_plot_profile_df['Time'].min()
+
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
 
-        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, label="LLC Loads")
-        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, label="LLC Misses")
+        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, color="blue", label="LLC Loads")
+        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, color="red", label="LLC Misses")
         axs[0].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[0].set_title("LLC Loads and LLC Misses (Zoomed In)")
         axs[0].set_xlabel("Time (microseconds)")
         axs[0].set_ylabel("Count")
         axs[0].legend()
 
-        axs[1].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['Instructions'], s=10, alpha=0.7, label="Instructions")
+        axs[1].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['Instructions'], s=10, alpha=0.7, color="green", label="Instructions")
         axs[1].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[1].set_title("Instructions (Zoomed In)")
         axs[1].set_xlabel("Time (microseconds)")

@@ -4,4 +4,3 @@ __pycache__/
 *.txt
 *.log
 *.old
-src/profile_core

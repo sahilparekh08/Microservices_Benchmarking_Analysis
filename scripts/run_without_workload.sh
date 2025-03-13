@@ -105,13 +105,11 @@ fi
 TEST_NAME=${TEST_NAME:-"No Workload Test"}
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
 DATA_DIR="$(realpath "$SCRIPTS_DIR/../data")"
 LOG_DIR="$DATA_DIR/no_workload/logs"
 
 echo "Started at: $(date)"
 echo -e "\nSCRIPTS_DIR: $SCRIPTS_DIR"
-echo "SRC_DIR: $SRC_DIR"
 echo "DATA_DIR: $DATA_DIR"
 echo "LOG_DIR: $LOG_DIR"
 
@@ -160,13 +158,13 @@ echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \
 echo -e "\n--------------------------------------------------"
 echo "Running collect_analyse_jaeger_traces.sh"
 if $SAVE_TRACES_JSON; then
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --src-dir "$SRC_DIR" --save-traces-json || exit 1
+    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --save-traces-json || exit 1
 else 
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --src-dir "$SRC_DIR" || exit 1
+    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" || exit 1
 fi
 echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running plot_data.sh"
-$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" --src-dir "$SRC_DIR" || exit 1
+$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
 echo "--------------------------------------------------"

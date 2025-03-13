@@ -34,10 +34,6 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
-        --src-dir)
-            SRC_DIR="$2"
-            shift 2
-            ;;
         --save-traces-json)
             SAVE_TRACES_JSON=true
             shift
@@ -50,19 +46,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$TEST_NAME" || -z "$CONFIG" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$DATA_DIR" ]]; then
-    echo "Usage: $0 --test-name TEST_NAME --config CONFIG --service-name-for-traces SERVICE_NAME_FOR_TRACES --data-dir DATA_DIR [--limit LIMIT] [--src-dir SRC_DIR]"
+    echo "Usage: $0 --test-name TEST_NAME --config CONFIG --service-name-for-traces SERVICE_NAME_FOR_TRACES --data-dir DATA_DIR [--limit LIMIT] [--save-traces-json]"
     exit 1
 fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
+TRACE_SRC_DIR="$(realpath "$SCRIPTS_DIR/../src/trace")"
 
 PROCESS_JAEGER_TRACES_LOG_PATH="$DATA_DIR/logs/process_jaeger_traces.log"
 
 if [ "$SAVE_TRACES_JSON" = true ]; then
     echo -e "Saving Jaeger traces as JSON in $DATA_DIR/data"
 
-    echo -e "python3 \"$SRC_DIR/process_jaeger_traces.py\" \\
+    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
         --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
         --data-dir \"$DATA_DIR\" \\
         --limit \"$LIMIT\" \\ 
@@ -70,7 +66,7 @@ if [ "$SAVE_TRACES_JSON" = true ]; then
         --config \"$CONFIG\" \\
         --save-traces-json > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
 
-    python3 "$SRC_DIR/process_jaeger_traces.py" \
+    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
         --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
         --data-dir "$DATA_DIR" \
         --limit "$LIMIT" \
@@ -81,14 +77,14 @@ if [ "$SAVE_TRACES_JSON" = true ]; then
         exit 1
     }
 else
-    echo -e "python3 \"$SRC_DIR/process_jaeger_traces.py\" \\
+    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
         --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
         --data-dir \"$DATA_DIR\" \\
         --limit \"$LIMIT\" \\
         --test-name \"$TEST_NAME\" \\
         --config \"$CONFIG\" > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
 
-    python3 "$SRC_DIR/process_jaeger_traces.py" \
+    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
         --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
         --data-dir "$DATA_DIR" \
         --limit "$LIMIT" \

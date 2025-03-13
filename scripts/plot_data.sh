@@ -29,10 +29,6 @@ while [[ $# -gt 0 ]]; do
             DATA_DIR="$2"
             shift 2
             ;;
-        --src-dir)
-            SRC_DIR="$2"
-            shift 2
-            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -41,24 +37,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$CONTAINER_NAME" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
-    echo "Usage: ./plot_data.sh --container-name <CONTAINER_NAME> --test-name <test_name> --config <config> --data-dir <data_dir> [--src-dir <src_dir>]"
+    echo "Usage: ./plot_data.sh --container-name <CONTAINER_NAME> --test-name <test_name> --config <config> --data-dir <data_dir>"
     exit 1
 fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
+SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
+PROFILE_SRC_DIR="${SRC_DIR}/profile"
+TRACE_SRC_DIR="${SRC_DIR}/trace"
 
 PLOT_BASE_DIR="$DATA_DIR/plots"
 
 PLOT_DIR="$PLOT_BASE_DIR/perf"
 PLOT_PROFILE_DATA_LOG_PATH="$DATA_DIR/logs/plot_profile_data.log"
-echo -e "python3 $SRC_DIR/plot_profile_data.py  \\
+echo -e "python3 $PROFILE_SRC_DIR/plot_profile_data.py  \\
     --test-name \"${TEST_NAME}\" \\
     --container-name \"${CONTAINER_NAME}\" \\ 
     --config \"${CONFIG}\" \\
     --data-dir \"${DATA_DIR}\" \\
     --plot-dir \"${PLOT_DIR}\" > $PLOT_PROFILE_DATA_LOG_PATH 2>&1"
-python3 "$SRC_DIR/plot_profile_data.py" \
+python3 "$PROFILE_SRC_DIR/plot_profile_data.py" \
     --test-name "${TEST_NAME}" \
     --container-name "${CONTAINER_NAME}" \
     --config "${CONFIG}" \
@@ -70,14 +68,14 @@ python3 "$SRC_DIR/plot_profile_data.py" \
 
 PLOT_DIR="$PLOT_BASE_DIR/traces"
 PLOT_JAEGER_DATA_LOG_PATH="$DATA_DIR/logs/plot_jaeger_data.log"
-echo -e "\npython3 $SRC_DIR/plot_jaeger_data.py \\
+echo -e "\npython3 $TRACE_SRC_DIR/plot_jaeger_data.py \\
     --test-name \"${TEST_NAME}\" \\
     --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
     --container-name \"${CONTAINER_NAME}\" \\
     --config \"${CONFIG}\" \\
     --data-dir \"${DATA_DIR}\" \\
     --plot-dir \"${PLOT_DIR}\" > $PLOT_JAEGER_DATA_LOG_PATH 2>&1"
-python3 "$SRC_DIR/plot_jaeger_data.py" \
+python3 "$TRACE_SRC_DIR/plot_jaeger_data.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
     --container-name "${CONTAINER_NAME}" \
@@ -90,14 +88,14 @@ python3 "$SRC_DIR/plot_jaeger_data.py" \
 
 PLOT_DIR="$PLOT_BASE_DIR/perf_with_traces"
 PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH="$DATA_DIR/logs/plot_profile_with_trace_data.log"
-echo -e "\npython3 $SRC_DIR/plot_profile_with_trace_data.py \\
+echo -e "\npython3 $PROFILE_SRC_DIR/plot_profile_with_trace_data.py \\
     --test-name \"${TEST_NAME}\" \\
     --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
     --container-name \"${CONTAINER_NAME}\" \\
     --config \"${CONFIG}\" \\
     --data-dir \"${DATA_DIR}\" \\
     --plot-dir \"${PLOT_DIR}\" > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1"
-python3 "$SRC_DIR/plot_profile_with_trace_data.py" \
+python3 "$PROFILE_SRC_DIR/plot_profile_with_trace_data.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
     --container-name "${CONTAINER_NAME}" \
