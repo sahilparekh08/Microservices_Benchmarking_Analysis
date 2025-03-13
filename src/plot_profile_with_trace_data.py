@@ -32,17 +32,17 @@ def load_traces_data(
     return container_jaeger_traces_df
 
 def load_perf_data(data_dir: str) -> pd.DataFrame:
-    llc_data_file: str = f"{data_dir}/data/perf_data.csv"
+    llc_data_file: str = f"{data_dir}/data/profile_data.csv"
     df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
     return df
 
-def get_samples(traces_df: pd.DataFrame, perf_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
+def get_samples(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
     sampled_traces = pd.DataFrame()
     trace_ids = list(traces_df['trace_id'].unique())
     random.shuffle(trace_ids)
 
-    min_perf_time = perf_df['Time'].min()
-    max_perf_time = perf_df['Time'].max()
+    min_perf_time = profile_df['Time'].min()
+    max_perf_time = profile_df['Time'].max()
     
     for trace_id in trace_ids:
         trace_sample = traces_df[traces_df['trace_id'] == trace_id]
@@ -68,14 +68,14 @@ def get_transformed_traces_df(traces_df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     return transformed_traces_df
 
-def plot_perf_with_traces(
+def plot_profile_with_traces(
     transformed_traces_df: pd.DataFrame,
-    perf_df: pd.DataFrame,
+    profile_df: pd.DataFrame,
     output_dir: str,
     num_samples: int,
     config: str
 ) -> None:
-    perf_df["Time"] = perf_df["Time"].astype(float)
+    profile_df["Time"] = profile_df["Time"].astype(float)
     transformed_traces_df["start_time"] = transformed_traces_df["start_time"].astype(float)
     transformed_traces_df["end_time"] = transformed_traces_df["end_time"].astype(float)
     num_plots = 0
@@ -89,38 +89,34 @@ def plot_perf_with_traces(
         trace_start = trace["start_time"]
         trace_end = trace["end_time"]
 
-        plot_perf_df = perf_df[
-            (perf_df["Time"] >= trace_start) & 
-            (perf_df["Time"] <= trace_end)
+        plot_profile_df = profile_df[
+            (profile_df["Time"] >= trace_start) & 
+            (profile_df["Time"] <= trace_end)
         ]
 
-        if plot_perf_df.empty:
+        if plot_profile_df.empty:
             print(f"No performance data found for trace_id {trace['trace_id']}")
             continue
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
 
         zoom_margin = 0.001
-        zoomed_plot_perf_df = perf_df[
-            (perf_df["Time"] >= trace_start - zoom_margin) & 
-            (perf_df["Time"] <= trace_end + zoom_margin)
+        zoomed_plot_profile_df = profile_df[
+            (profile_df["Time"] >= trace_start - zoom_margin) & 
+            (profile_df["Time"] <= trace_end + zoom_margin)
         ]
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
 
-        zoomed_plot_perf_df_load = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "LOAD"]
-        zoomed_plot_perf_df_miss = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "MISS"]
-        zoomed_plot_perf_df_instructions = zoomed_plot_perf_df[zoomed_plot_perf_df["Type"] == "INSTRUCTIONS"]
-
-        axs[0].scatter(zoomed_plot_perf_df_load["Time"], zoomed_plot_perf_df_load["Frequency"], s=10, alpha=0.7, label="LLC Loads")
-        axs[0].scatter(zoomed_plot_perf_df_miss["Time"], zoomed_plot_perf_df_miss["Frequency"], s=10, alpha=0.7, label="LLC Misses")
+        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, label="LLC Loads")
+        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, label="LLC Misses")
         axs[0].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[0].set_title("LLC Loads and LLC Misses (Zoomed In)")
         axs[0].set_xlabel("Time (microseconds)")
         axs[0].set_ylabel("Count")
         axs[0].legend()
 
-        axs[1].scatter(zoomed_plot_perf_df_instructions["Time"], zoomed_plot_perf_df_instructions["Frequency"], s=10, alpha=0.7, label="Instructions")
+        axs[1].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['Instructions'], s=10, alpha=0.7, label="Instructions")
         axs[1].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[1].set_title("Instructions (Zoomed In)")
         axs[1].set_xlabel("Time (microseconds)")
@@ -137,20 +133,19 @@ def plot_perf_with_traces(
 
 def plot_traces_start_end_times_and_perf_data(
     container_traces_df: pd.DataFrame,
-    perf_df: pd.DataFrame,
+    profile_df: pd.DataFrame,
     output_dir: str
 ) -> None:
     delta = 0.0001
     threshold = 0.001
 
     plt.figure(figsize=(15, 5))
-    transformed_perf_df = perf_df[perf_df["Type"] == "INSTRUCTIONS"]
     transformed_traces_df = get_transformed_traces_df(container_traces_df)
     
-    plt.scatter(transformed_perf_df["Time"], transformed_perf_df["Frequency"], s=10, alpha=0.7, label="Instructions")
+    plt.scatter(profile_df["Time"], profile_df["Instructions"], s=10, alpha=0.7, label="Instructions")
 
-    min_perf_time = perf_df['Time'].min()
-    max_perf_time = perf_df['Time'].max()
+    min_perf_time = profile_df['Time'].min()
+    max_perf_time = profile_df['Time'].max()
     min_trace_time = transformed_traces_df['start_time'].min()
     max_trace_time = transformed_traces_df['end_time'].max()
     if min_trace_time < min_perf_time:
@@ -191,11 +186,11 @@ def main() -> None:
     
     container_jaeger_traces_df: pd.DataFrame = load_traces_data(
         data_dir, service_name_for_traces, test_name, config, container_name)
-    perf_df: pd.DataFrame = load_perf_data(data_dir)
+    profile_df: pd.DataFrame = load_perf_data(data_dir)
 
     edt = ZoneInfo("America/New_York")
-    min_perf_time = perf_df['Time'].min()
-    max_perf_time = perf_df['Time'].max()
+    min_perf_time = profile_df['Time'].min()
+    max_perf_time = profile_df['Time'].max()
     min_trace_time = container_jaeger_traces_df['start_time'].min()
     max_trace_time = container_jaeger_traces_df['end_time'].max()
     min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
@@ -207,12 +202,12 @@ def main() -> None:
 
     plot_traces_start_end_times_and_perf_data(
         container_jaeger_traces_df,
-        perf_df,
+        profile_df,
         plot_dir
     )
 
     transformed_traces_df = get_transformed_traces_df(container_jaeger_traces_df)
-    plot_perf_with_traces(transformed_traces_df, perf_df, plot_dir, samples, config)
+    plot_profile_with_traces(transformed_traces_df, profile_df, plot_dir, samples, config)
     
     print("Plot generation complete.")
 

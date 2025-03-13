@@ -48,17 +48,26 @@ fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="${SRC_DIR:-$(realpath "$SCRIPTS_DIR/../src")}"
-PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/DATA/profile_data.csv"
+LOG_DIR="$DATA_DIR/logs"
+PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/data/profile_data.csv"
 
 DURATION=$((DURATION + 2))
 
-echo "nasm -f elf64 $SRC_DIR/profiler.asm -o $SRC_DIR/profiler.o"
-nasm -f elf64 $SRC_DIR/profiler.asm -o $SRC_DIR/profiler.o
-
-echo "ld $SRC_DIR/profiler.o -o $SRC_DIR/profiler"
-ld $SRC_DIR/profiler.o -o $SRC_DIR/profiler
+echo "gcc -o $SRC_DIR/profile_core $SRC_DIR/profile_core.c"
+gcc -o $SRC_DIR/profile_core $SRC_DIR/profile_core.c
 
 echo -e "\nStarting profiler at $(date)"
-echo "sudo $SRC_DIR/profiler $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH"
-sudo $SRC_DIR/profiler $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH
-echo -e "\nFinished at $(date)"
+echo "sudo $SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/profile.log 2>&1"
+sudo $SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/profile.log 2>&1
+echo "Finished at $(date)"
+
+LEN_PROFILE_DATA=$(wc -l < "$PROFILE_DATA_OUTPUT_PATH")
+LEN_PROFILE_DATA=$((LEN_PROFILE_DATA - 1))
+if [[ $LEN_PROFILE_DATA -eq 0 ]]; then
+    echo "No data collected, check $LOG_DIR/profile.log for details"
+    exit 1
+fi
+echo "Collected $LEN_PROFILE_DATA lines of data"
+
+echo -e "\nrm $SRC_DIR/profile_core"
+rm $SRC_DIR/profile_core

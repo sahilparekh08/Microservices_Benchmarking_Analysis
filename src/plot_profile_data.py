@@ -14,17 +14,26 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 def load_data(data_dir: str) -> pd.DataFrame:
-    perf_data_file: str = f"{data_dir}/data/perf_data.csv"
+    perf_data_file: str = f"{data_dir}/data/profile_data.csv"
     perf_df: pd.DataFrame = pd.read_csv(perf_data_file, sep=",")
     perf_df["Time"] = perf_df["Time"] - perf_df["Time"].min()
     return perf_df
 
-def calculate_percentiles(df: pd.DataFrame, data_type: str) -> Tuple[pd.DataFrame, float, float, float]:
-    data: pd.DataFrame = df[df["Type"] == data_type]
-    median: float = float(np.median(data["Frequency"]))
-    p25: float = float(np.percentile(data["Frequency"], 25))
-    p75: float = float(np.percentile(data["Frequency"], 75))
-    return data, median, p25, p75
+def calculate_percentiles(df: pd.DataFrame, column: str) -> Tuple[pd.DataFrame, float, float, float, float]:
+    data: pd.DataFrame = df[["Time", column]].copy()
+    data[column] = data[column].astype(float)
+    data[column] = data[column].replace(0, np.nan)
+    data = data.dropna()
+    data = data.sort_values(by="Time")
+    data['Time'] = data['Time'].astype(int)
+    data['Yime'] = data['Time'] - data['Time'].min()
+
+    median: float = float(np.median(data[column]))
+    p25: float = float(np.percentile(data[column], 25))
+    p75: float = float(np.percentile(data[column], 75))
+    p99: float = float(np.percentile(data[column], 99))
+    print(f"{column} Median: {median:.2f} | 25th: {p25:.2f} | 75th: {p75:.2f} | 99th: {p99:.2f}")
+    return data, median, p25, p75, p99
 
 def plot_data(
     axes: plt.Axes,
@@ -32,15 +41,17 @@ def plot_data(
     median: float,
     p25: float,
     p75: float,
+    p99: float,
     label: str,
     color: str,
     position: int,
     title: str
 ) -> None:
-    axes[position].scatter(data["Time"], data["Frequency"], label=label, color=color, marker="o", s=16)  
+    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=16)  
     axes[position].axhline(median, color=color, linestyle="--", label=f"{title} Median", alpha=0.7)
     axes[position].axhline(p25, color=color, linestyle=":", label=f"{title} 25th", alpha=0.5)
     axes[position].axhline(p75, color=color, linestyle=":", label=f"{title} 75th", alpha=0.5)
+    axes[position].axhline(p99, color=color, linestyle=":", label=f"{title} 99th", alpha=0.5)
 
 def add_text_box(
     axes: plt.Axes, 
@@ -48,11 +59,12 @@ def add_text_box(
     median: float, 
     p25: float, 
     p75: float, 
+    p99: float, 
     label: str, 
     color: str, 
     y_offset: float = 0
 ) -> None:
-    text: str = f'{label}\nMedian: {median:.2f}\n25th: {p25:.2f}\n75th: {p75:.2f}'
+    text: str = f'{label}\nMedian: {median:.2f}\n25th: {p25:.2f}\n75th: {p75:.2f}\n99th: {p99:.2f}'
     bbox_props: dict = {
         "boxstyle": "round,pad=0.5",
         "facecolor": "white",
@@ -69,7 +81,7 @@ def add_text_box(
         horizontalalignment='left',
         bbox=bbox_props
     )
-    
+
 def save_plot(fig: plt.Figure, output_file_path: str) -> None:
     fig.tight_layout()
     plt.savefig(output_file_path, bbox_inches='tight', dpi=300)
@@ -94,21 +106,21 @@ def main() -> None:
 
     perf_df: pd.DataFrame = load_data(data_dir)
     
-    loads, loads_median, loads_25th, loads_75th = calculate_percentiles(perf_df, "LOAD")
-    misses, misses_median, misses_25th, misses_75th = calculate_percentiles(perf_df, "MISS")
-    instructions, instructions_median, instructions_25th, instructions_75th = calculate_percentiles(perf_df, "INSTRUCTIONS")
+    loads, loads_median, loads_25th, loads_75th, loads_99th = calculate_percentiles(perf_df, "LLC-loads")
+    misses, misses_median, misses_25th, misses_75th, misses_99th = calculate_percentiles(perf_df, "LLC-misses")
+    instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th = calculate_percentiles(perf_df, "Instructions")
 
     plt.style.use('ggplot')
     
     fig, axes = plt.subplots(2, 1, figsize=(12, 12))
 
-    plot_data(axes, loads, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", 0, "Loads")
-    plot_data(axes, misses, misses_median, misses_25th, misses_75th, "LLC Misses", "red", 0, "Misses")
-    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, "Instructions", "green", 1, "Instr")
+    plot_data(axes, loads, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0, "Loads")
+    plot_data(axes, misses, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0, "Misses")
+    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 1, "Instr")
 
-    add_text_box(axes, 0, loads_median, loads_25th, loads_75th, "LLC Loads", "blue", 0)
-    add_text_box(axes, 0, misses_median, misses_25th, misses_75th, "LLC Misses", "red", 0.25)
-    add_text_box(axes, 1, instructions_median, instructions_25th, instructions_75th, "Instructions", "green", 0)
+    add_text_box(axes, 0, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0)
+    add_text_box(axes, 0, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0.25)
+    add_text_box(axes, 1, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 0)
 
     fig.suptitle(f"TEST: {test_name} | SERVICE: {container_name} | CONFIGS: {configs}", fontsize=14, fontweight='bold', y=0.98)
     save_plot(fig, output_file_path)
