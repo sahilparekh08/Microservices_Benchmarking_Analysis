@@ -1,13 +1,18 @@
 #!/bin/bash
 
-CORE=""
+CORE_TO_PIN=""
+TARGET_CORE=""
 CONFIG=""
 DATA_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --core)
-            CORE="$2"
+        --core-to-pin)
+            CORE_TO_PIN="$2"
+            shift 2
+            ;;
+        --target-core)
+            TARGET_CORE="$2"
             shift 2
             ;;
         --config)
@@ -25,8 +30,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CORE" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
-    echo "Usage: $0 --core <core> --config <config> --data-dir <data_dir>"
+if [[ -z "$CORE_TO_PIN" || -z "$TARGET_CORE" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
+    echo "Usage: $0 --core-to-pin <core_to_pin> --target-core <target_core> --config <config> --data-dir <data_dir>"
     exit 1
 fi
 
@@ -68,8 +73,8 @@ sudo gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/d
 }
 
 echo -e "\nStarting profiler at $(date)"
-echo "sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
-sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
+echo "sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
+sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
     echo "Failed to run profile_core"
     exit 1
 }

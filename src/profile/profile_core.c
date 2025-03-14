@@ -32,8 +32,8 @@
 #define INSTR_RETIRED_UMASK   0x00
 
 // Buffer size settings
-#define BATCH_SIZE 100
-#define BUFFER_SIZE 1000000  // Number of samples to keep in memory before flushing to disk
+#define BATCH_SIZE 1000000
+#define BUFFER_SIZE 10000000  // Number of samples to keep in memory before flushing to disk
 #define WAIT_TIME_BETWEEN_SAMPLES_IN_NS 10000  // Time to wait between samples in nanoseconds
 
 // Global variables
@@ -150,13 +150,14 @@ void signal_handler(int signum) {
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <target_core> <duration_seconds> <data_file_path>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <core_to_pin> <target_core> <duration_seconds> <data_file_path>\n", argv[0]);
         return EXIT_FAILURE;
     }
     
-    int target_core = atoi(argv[1]);
-    int duration_sec = atoi(argv[2]);
-    const char* bin_file_path = argv[3];
+    int core_to_pin = atoi(argv[1]);
+    int target_core = atoi(argv[2]);
+    int duration_sec = atoi(argv[3]);
+    const char* bin_file_path = argv[4];
     
     // Set up signal handlers for graceful termination
     signal(SIGINT, signal_handler);
@@ -180,7 +181,7 @@ int main(int argc, char *argv[]) {
     // Pin to the target core
     cpu_set_t cpu_set;
     CPU_ZERO(&cpu_set);
-    CPU_SET(target_core, &cpu_set);
+    CPU_SET(core_to_pin, &cpu_set);
     if (sched_setaffinity(0, sizeof(cpu_set), &cpu_set) == -1) {
         perror("Error setting CPU affinity");
         free(samples);
@@ -216,7 +217,7 @@ int main(int argc, char *argv[]) {
     sample_t batch_samples[BATCH_SIZE];
     int batch_index = 0;
     
-    printf("Starting profiling on core %d for %d seconds...\n", target_core, duration_sec);
+    printf("Running on core [%d] and profiling core [%d] for [%d] seconds...\n", core_to_pin, target_core, duration_sec);
     
     // Main sampling loop
     while (get_monotonic_ns() < end_time) {
@@ -243,11 +244,6 @@ int main(int argc, char *argv[]) {
             
             batch_index++;
             next_sample_time += WAIT_TIME_BETWEEN_SAMPLES_IN_NS;  // Next 10 microseconds
-            
-            // If we're more than 50% behind schedule, catch up
-            if (now > next_sample_time) {
-                next_sample_time = now + WAIT_TIME_BETWEEN_SAMPLES_IN_NS;
-            }
             
             // Process batch when full
             if (batch_index == BATCH_SIZE) {
@@ -276,8 +272,8 @@ int main(int argc, char *argv[]) {
     // Process any remaining samples in the batch
     if (batch_index > 0) {
         memcpy(&samples[sample_index], batch_samples, sizeof(sample_t) * batch_index);
-        sample_index += batch_index;
         total_samples += batch_index;
+        flush_buffer_to_disk();
     }
     
     // Clean up
