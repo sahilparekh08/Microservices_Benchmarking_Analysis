@@ -1,7 +1,8 @@
 .vscode
-data/*
+data/
 __pycache__/
 *.txt
 *.log
 *.old
-tests/
+*.bin
+*.o

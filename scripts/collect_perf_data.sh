@@ -62,18 +62,24 @@ echo "sudo perf record -o "${CONTAINER_NAME}.data" \\
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \\
     -k CLOCK_MONOTONIC \\
     --timestamp \\
-    -- sleep $DURATION || exit 1"
+    -- sleep $DURATION"
 sudo perf record -o "${CONTAINER_NAME}.data" \
     -e LLC-loads -e LLC-load-misses -e instructions \
     -F 40000 \
     -p $(docker inspect --format '{{.State.Pid}}' $(docker ps -a | grep "$CONTAINER_NAME" | awk '{print $1}')) \
     -k CLOCK_MONOTONIC \
     --timestamp \
-    -- sleep $DURATION || exit 1
+    -- sleep $DURATION || {
+        echo "Failed to collect perf data"
+        exit 1
+    }
 echo "Finished perf data collection at $(date)"
 
-echo -e "\nsudo perf script -i \"${CONTAINER_NAME}.data\" > perf_output.txt || exit 1"
-sudo perf script -i "${CONTAINER_NAME}.data" > perf_output.txt || exit 1
+echo -e "\nsudo perf script -i \"${CONTAINER_NAME}.data\" > perf_output.txt"
+sudo perf script -i "${CONTAINER_NAME}.data" > perf_output.txt || {
+    echo "Failed to generate perf script"
+    exit 1
+}
 
 PERF_DATA_RAW_CSV_PATH="$DATA_DIR/data/perf_data_raw.csv"
 PERF_DATA_UNPARSED_CSV_PATH="$DATA_DIR/data/perf_data_unparsed.csv"
@@ -81,10 +87,13 @@ PROFILE_DATA_CSV_PATH="$DATA_DIR/data/profile_data.csv"
 
 echo -e "\nawk '/LLC-loads/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",LOAD\"} 
      /LLC-load-misses/ {gsub(\":\", \"\", \$3); print \$3 \",\" \$4 \",MISS\"}
-     /instructions/ {gsub(\":\", \"\", \$3); print \$3 "," \$4 ",INSTRUCTIONS"}' perf_output.txt >> \"$PERF_DATA_RAW_CSV_PATH\" || exit 1"
+     /instructions/ {gsub(\":\", \"\", \$3); print \$3 "," \$4 ",INSTRUCTIONS"}' perf_output.txt >> \"$PERF_DATA_RAW_CSV_PATH\""
 awk '/LLC-loads/ {gsub(":", "", $3); print $3 "," $4 ",LOAD"} 
      /LLC-load-misses/ {gsub(":", "", $3); print $3 "," $4 ",MISS"}
-     /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt >> "$PERF_DATA_RAW_CSV_PATH" || exit 1
+     /instructions/ {gsub(":", "", $3); print $3 "," $4 ",INSTRUCTIONS"}' perf_output.txt >> "$PERF_DATA_RAW_CSV_PATH" || {
+        echo "Failed to parse perf output"
+        exit 1
+     }
 
 echo "echo \"Time,Frequency,Type\" > $PERF_DATA_UNPARSED_CSV_PATH"
 echo "Time,Frequency,Type" > $PERF_DATA_UNPARSED_CSV_PATH
@@ -104,10 +113,13 @@ awk -v boot_time=$BOOT_TIME 'BEGIN {FS=","; OFS=","} NR >= 1 { \
 
 echo -e "\npython3 $PROFILE_SRC_DIR/parse_perf_data.py \\
     --input-file \"$PERF_DATA_UNPARSED_CSV_PATH\" \\
-    --output-file \"$PROFILE_DATA_CSV_PATH\" > $LOG_DIR/parse_perf_data.log 2>&1 || exit 1"
+    --output-file \"$PROFILE_DATA_CSV_PATH\" > $LOG_DIR/parse_perf_data.log 2>&1"
 python3 $PROFILE_SRC_DIR/parse_perf_data.py \
     --input-file "$PERF_DATA_UNPARSED_CSV_PATH" \
-    --output-file "$PROFILE_DATA_CSV_PATH" > $LOG_DIR/parse_perf_data.log 2>&1 || exit 1
+    --output-file "$PROFILE_DATA_CSV_PATH" > $LOG_DIR/parse_perf_data.log 2>&1 || {
+        echo "Failed to parse perf data"
+        exit 1
+    }
 
 echo -e "\nsudo rm -f \"${CONTAINER_NAME}.data\""
 sudo rm -f "${CONTAINER_NAME}.data"

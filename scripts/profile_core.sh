@@ -55,19 +55,31 @@ PROFILE_DATA_BIN_PATH="$DATA_DIR/data/profile_data.bin"
 
 DURATION=$((DURATION + 2))
 
-echo "gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt"
-gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt
+echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lpthread -lrt -O2"
+sudo gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lpthread -lrt -O2 || {
+    echo "Failed to compile profile_core.c"
+    exit 1
+}
 
-echo "gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data"
-gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data
+echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data"
+sudo gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data || {
+    echo "Failed to compile decode_profiled_data.c"
+    exit 1
+}
 
 echo -e "\nStarting profiler at $(date)"
-echo "sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || exit 1"
-sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || exit 1
+echo "sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
+sudo $PROFILE_SRC_DIR/profile_core $CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
+    echo "Failed to run profile_core"
+    exit 1
+}
 echo -e "Finished at $(date)\n"
 
-echo "sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || exit 1"
-sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || exit 1
+echo "sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1"
+sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || {
+    echo "Failed to run decode_profiled_data"
+    exit 1
+}
 
 LEN_PROFILED_DATA=$(wc -l < "$PROFILE_DATA_OUTPUT_PATH")
 LEN_PROFILED_DATA=$((LEN_PROFILED_DATA - 1))

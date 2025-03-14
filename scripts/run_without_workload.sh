@@ -125,12 +125,18 @@ echo -e "\nNew DATA_DIR: $DATA_DIR"
 
 echo -e "\n--------------------------------------------------"
 echo "Running deathstar_clean_start.sh"
-$SCRIPTS_DIR/deathstar_clean_start.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --log-dir "$LOG_DIR" || exit 1
+$SCRIPTS_DIR/deathstar_clean_start.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --log-dir "$LOG_DIR" || {
+    echo "Failed to bring up docker compose"
+    exit 1
+}
 echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running get_pid_info_for_containers.sh"
-$SCRIPTS_DIR/get_pid_info_for_containers.sh || exit 1
+$SCRIPTS_DIR/get_pid_info_for_containers.sh || {
+    echo "Failed to get PID info for containers"
+    exit 1
+}
 echo -e "--------------------------------------------------\n"
 
 echo "sleep 5"
@@ -146,7 +152,10 @@ echo "CONFIG: $CONFIG"
 
 echo -e "\n--------------------------------------------------"
 echo "Running collect_perf_data.sh"
-$SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+$SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || {
+    echo "Failed to collect perf data"
+    exit 1
+}
 echo -e "--------------------------------------------------\n"
 
 echo "sleep 5"
@@ -158,13 +167,22 @@ echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \
 echo -e "\n--------------------------------------------------"
 echo "Running collect_analyse_jaeger_traces.sh"
 if $SAVE_TRACES_JSON; then
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --save-traces-json || exit 1
+    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --save-traces-json || {
+        echo "Failed to collect and analyse Jaeger traces"
+        exit 1
+    }
 else 
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" || exit 1
+    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" || {
+        echo "Failed to collect and analyse Jaeger traces"
+        exit 1
+    }
 fi
 echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running plot_data.sh"
-$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" || {
+    echo "Failed to plot data"
+    exit 1
+}
 echo "--------------------------------------------------"

@@ -30,14 +30,20 @@ if [[ ! -d "$DOCKER_COMPOSE_DIR" ]]; then
 	exit 1
 fi
 
-echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down) || exit 1"
-(cd "$DOCKER_COMPOSE_DIR" && docker compose down) || exit 1
+echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down)"
+(cd "$DOCKER_COMPOSE_DIR" && docker compose down) || {
+	echo "Failed to bring down docker compose"
+	exit 1
+}
 
 echo -e "\ndocker volume prune -f"
 docker volume prune -f
 
-echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d) || exit 1"
-(cd "$DOCKER_COMPOSE_DIR" && docker compose up -d) || exit 1
+echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d)"
+(cd "$DOCKER_COMPOSE_DIR" && docker compose up -d) || {
+	echo "Failed to bring up docker compose"
+	exit 1
+}
 
 if [[ "$(basename "$DOCKER_COMPOSE_DIR")" = "socialNetwork" ]]; then
 	if [[ -z "$LOG_DIR" ]]; then
