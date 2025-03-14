@@ -34,6 +34,7 @@
 // Buffer size settings
 #define BATCH_SIZE 100
 #define BUFFER_SIZE 1000000  // Number of samples to keep in memory before flushing to disk
+#define WAIT_TIME_BETWEEN_SAMPLES_IN_NS 10000  // Time to wait between samples in nanoseconds
 
 // Global variables
 sample_t *samples;
@@ -206,7 +207,7 @@ int main(int argc, char *argv[]) {
     uint64_t curr_llc_loads, curr_llc_misses, curr_instr_retired;
     uint64_t start_time = get_monotonic_ns();
     uint64_t end_time = start_time + (duration_sec * 1000000000ULL);
-    uint64_t next_sample_time = start_time + 10000;  // 10 microseconds (in ns)
+    uint64_t next_sample_time = start_time + WAIT_TIME_BETWEEN_SAMPLES_IN_NS;  // 10 microseconds (in ns)
     uint64_t last_status_time = start_time;
     
     // Batch processing variables
@@ -239,11 +240,11 @@ int main(int argc, char *argv[]) {
             prev_instr_retired = curr_instr_retired;
             
             batch_index++;
-            next_sample_time += 10000;  // Next 10 microseconds
+            next_sample_time += WAIT_TIME_BETWEEN_SAMPLES_IN_NS;  // Next 10 microseconds
             
             // If we're more than 50% behind schedule, catch up
             if (now > next_sample_time) {
-                next_sample_time = now + 10000;
+                next_sample_time = now + WAIT_TIME_BETWEEN_SAMPLES_IN_NS;
             }
             
             // Process batch when full

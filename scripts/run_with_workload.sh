@@ -180,20 +180,15 @@ echo "Running execute_workload_on_local.sh in background with logs saved at $RUN
 $SCRIPTS_DIR/execute_workload_on_local.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --test-name "$TEST_NAME" --config "$CONFIG" > "$RUN_WORKLOAD_ON_LOCAL_LOG_PATH" 2>&1 &
 echo -e "--------------------------------------------------\n"
 
-# echo "--------------------------------------------------"
-# echo "Running collect_perf_data.sh"
-# $SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
-# echo -e "--------------------------------------------------\n"
+echo "--------------------------------------------------"
+echo "Running collect_perf_data.sh"
+$SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+echo -e "--------------------------------------------------\n"
 
 # echo "--------------------------------------------------"
-# echo "Running profile_core_assembly.sh"
-# $SCRIPTS_DIR/profile_core_assembly.sh --core $CORE --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
-# echo -e "--------------------------------------------------\n"
-
-echo "--------------------------------------------------"
-echo "Running profile_core.sh"
-$SCRIPTS_DIR/profile_core.sh --core $CORE --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
-echo "--------------------------------------------------"
+# echo "Running profile_core.sh"
+# $SCRIPTS_DIR/profile_core.sh --core $CORE --config "$CONFIG" --data-dir "$DATA_DIR" || exit 1
+# echo "--------------------------------------------------"
 
 echo "sleep 5"
 sleep 5

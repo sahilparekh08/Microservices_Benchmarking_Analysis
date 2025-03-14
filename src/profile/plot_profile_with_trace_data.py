@@ -73,14 +73,16 @@ def plot_profile_with_traces(
     profile_df: pd.DataFrame,
     output_dir: str,
     num_samples: int,
-    config: str
+    config: str,
+    container_name: str,
+    service_name_for_traces: str
 ) -> None:
     profile_df["Time"] = profile_df["Time"].astype(float)
     transformed_traces_df["start_time"] = transformed_traces_df["start_time"].astype(float)
     transformed_traces_df["end_time"] = transformed_traces_df["end_time"].astype(float)
     num_plots = 0
 
-    print(f"Trying to plot [{len(transformed_traces_df)}] traces")
+    print(f"Trying to plot [{num_samples} / {len(transformed_traces_df)}] traces")
 
     for _, trace in transformed_traces_df.iterrows():
         if num_plots == num_samples:
@@ -100,26 +102,30 @@ def plot_profile_with_traces(
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
 
-        zoom_margin = 0.001
-        zoomed_plot_profile_df = profile_df[
-            (profile_df["Time"] >= trace_start - zoom_margin) & 
-            (profile_df["Time"] <= trace_end + zoom_margin)
+        zoom_margin = 0.1 * (trace_end - trace_start)
+        zoomed_plot_profile_df = plot_profile_df[
+            (plot_profile_df["Time"] >= trace_start - zoom_margin) &
+            (plot_profile_df["Time"] <= trace_end + zoom_margin)
         ]
+        zoomed_plot_profile_df = zoomed_plot_profile_df.sort_values(by="Time")
 
-        zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].astype(float)
-        zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].astype(float)
-        zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].astype(float)
+        zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].astype(int)
+        zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].astype(int)
+        zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].astype(int)
 
         zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].replace(0, np.nan)
         zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].replace(0, np.nan)
         zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].replace(0, np.nan)
 
-        zoomed_plot_profile_df = zoomed_plot_profile_df.dropna(subset=["LLC-loads", "LLC-misses", "Instructions"])
-        zoomed_plot_profile_df = zoomed_plot_profile_df.sort_values(by="Time")
-        zoomed_plot_profile_df['Time'] = zoomed_plot_profile_df['Time'].astype(int)
-        zoomed_plot_profile_df['Time'] = zoomed_plot_profile_df['Time'] - zoomed_plot_profile_df['Time'].min()
+        cache_partitions_str = ""
+        config_parts = config.split("_")
+        for part in config_parts:
+            if part.startswith("cp"):
+                cache_partitions_str = part
+                break
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
+        fig.suptitle(container_name + "    |    " + service_name_for_traces + "    |    " + cache_partitions_str, fontsize=16, fontweight='bold')
 
         axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, color="blue", label="LLC Loads")
         axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, color="red", label="LLC Misses")
@@ -196,6 +202,12 @@ def main() -> None:
     samples: int = args.samples
     plot_dir: str = args.plot_dir
     os.makedirs(plot_dir, exist_ok=True)
+
+    print(f"Loading data from {data_dir} for test {test_name} with config {config}")
+    print(f"Container name: {container_name}")
+    print(f"Service name for traces: {service_name_for_traces}")
+    print(f"Samples per operation: {samples}")
+    print(f"Plot directory: {plot_dir}")
     
     container_jaeger_traces_df: pd.DataFrame = load_traces_data(
         data_dir, service_name_for_traces, test_name, config, container_name)
@@ -220,7 +232,7 @@ def main() -> None:
     )
 
     transformed_traces_df = get_transformed_traces_df(container_jaeger_traces_df)
-    plot_profile_with_traces(transformed_traces_df, profile_df, plot_dir, samples, config)
+    plot_profile_with_traces(transformed_traces_df, profile_df, plot_dir, samples, config, container_name, service_name_for_traces)
     
     print("Plot generation complete.")
 
