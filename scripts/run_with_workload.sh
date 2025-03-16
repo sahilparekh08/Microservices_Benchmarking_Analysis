@@ -189,7 +189,7 @@ echo "sleep 5"
 sleep 5
 
 echo -e "\n--------------------------------------------------"
-# NOTE: Edit grub file to specific isolcpus=<cpu number> for the container to profile and then reboot
+# NOTE: Edit grub file to specific isolcpus=<cpu_to_pin_profiler>,<cpu_to_profile> for the container to profile and then reboot
 RUN_WORKLOAD_ON_LOCAL_LOG_PATH="$LOG_DIR/run_workload_on_local_output.log"
 echo "Running execute_workload_on_local.sh in background with logs saved at $RUN_WORKLOAD_ON_LOCAL_LOG_PATH"
 $SCRIPTS_DIR/execute_workload_on_local.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --test-name "$TEST_NAME" --config "$CONFIG" > "$RUN_WORKLOAD_ON_LOCAL_LOG_PATH" 2>&1 &
@@ -205,7 +205,7 @@ echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running profile_core.sh"
-$SCRIPTS_DIR/profile_core.sh --core-to-pin $CORE_TO_PIN --target-core $TARGET_CORE --config "$CONFIG" --data-dir "$DATA_DIR" || {
+$SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-core "$TARGET_CORE" --config "$CONFIG" --data-dir "$DATA_DIR" || {
     echo "Failed to profile core"
     exit 1
 }

@@ -35,6 +35,12 @@ if [[ -z "$CORE_TO_PIN" || -z "$TARGET_CORE" || -z "$CONFIG" || -z "$DATA_DIR" ]
     exit 1
 fi
 
+echo "Profiling with the following parameters:"
+echo "  Core to pin: $CORE_TO_PIN"
+echo "  Target core: $TARGET_CORE"
+echo "  Config: $CONFIG"
+echo "  Data directory: $DATA_DIR"
+
 DURATION=0
 
 IFS=' ' read -r -a CONFIG <<< "$CONFIG"
@@ -60,8 +66,23 @@ PROFILE_DATA_BIN_PATH="$DATA_DIR/data/profile_data.bin"
 
 DURATION=$((DURATION + 2))
 
-echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lpthread -lrt -O2"
-sudo gcc -O3 -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lpthread -lrt -O2 || {
+cleanup() {
+    PROFILE_CORE_COMPILED_PATH="$PROFILE_SRC_DIR/profile_core"
+    DECODE_PROFILED_DATA_COMPILED_PATH="$PROFILE_SRC_DIR/decode_profiled_data"
+
+    if [[ -f "$PROFILE_CORE_COMPILED_PATH" ]]; then
+        echo "rm $PROFILE_CORE_COMPILED_PATH"
+        rm "$PROFILE_CORE_COMPILED_PATH"
+    fi
+
+    if [[ -f "$DECODE_PROFILED_DATA_COMPILED_PATH" ]]; then
+        echo "rm $DECODE_PROFILED_DATA_COMPILED_PATH"
+        rm "$DECODE_PROFILED_DATA_COMPILED_PATH"
+    fi
+}
+
+echo -e "\nsudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt"
+sudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt || {
     echo "Failed to compile profile_core.c"
     exit 1
 }
@@ -76,6 +97,7 @@ echo -e "\nStarting profiler at $(date)"
 echo "sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
 sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
     echo "Failed to run profile_core"
+    cleanup
     exit 1
 }
 echo -e "Finished at $(date)\n"
@@ -83,6 +105,7 @@ echo -e "Finished at $(date)\n"
 echo "sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1"
 sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || {
     echo "Failed to run decode_profiled_data"
+    cleanup
     exit 1
 }
 
@@ -95,3 +118,5 @@ rm $PROFILE_SRC_DIR/profile_core $PROFILE_SRC_DIR/decode_profiled_data
 
 echo "rm $PROFILE_DATA_BIN_PATH"
 rm $PROFILE_DATA_BIN_PATH
+
+cleanup
