@@ -2,6 +2,8 @@ from traces_handler import get_trace_ids, get_services, parse_and_save_traces
 import argparse
 import os
 
+DEFAULT_SERVICE_NAME = "nginx-web-server"
+
 def parse_config_file(data_dir: str) -> dict:
     docker_container_service_config_path = os.path.join(data_dir, "docker_container_service_config.csv")
     if not os.path.exists(docker_container_service_config_path):
@@ -19,11 +21,14 @@ def parse_config_file(data_dir: str) -> dict:
     return jaeger_service_to_container_mapping
 
 def process_traces(service_name_for_traces: str, data_dir :str, limit: int, test_name: str, config: str, jaeger_service_to_container_mapping: dict, save_traces_json: bool) -> None:
+    global DEFAULT_SERVICE_NAME
+
     available_services = get_services()['data']
     if service_name_for_traces not in available_services:
         print(f"[ERROR:] Service '{service_name_for_traces}' not found.")
         print(f"Available services: [{' , '.join(available_services)}]")
-        SystemExit(1)
+        print(f"Using default service to collect traces [{DEFAULT_SERVICE_NAME}]")
+        service_name_for_traces = DEFAULT_SERVICE_NAME
     
     trace_ids = get_trace_ids(service_name_for_traces, limit)
 
@@ -44,7 +49,9 @@ def process_traces(service_name_for_traces: str, data_dir :str, limit: int, test
 
     print(f"Saved traces data to {df_csv_file_path}")
 
-if __name__ == "__main__":
+def main() -> None:
+    global DEFAULT_SERVICE_NAME
+
     parser = argparse.ArgumentParser(description="Analyse traces for a given service")
     parser.add_argument("--service-name-for-traces", type=str, required=True, help="Service name")
     parser.add_argument("--data-dir", type=str, required=True, help="Data directory")
@@ -52,10 +59,17 @@ if __name__ == "__main__":
     parser.add_argument("--test-name", type=str, required=True, help="Test name")
     parser.add_argument("--config", type=str, required=True, help="Test config")
     parser.add_argument("--save-trace-json", type=bool, default=False, help="Save trace jsons")
+    parser.add_argument("--default-service-name", type=str, help="Default service name")
 
     args = parser.parse_args()
-    print(f"Processing jaeger traces for following args:\n\tservice_name_for_traces [{args.service_name_for_traces}]\n\tdata_dir [{args.data_dir}]\n\tlimit [{args.limit}]\n\ttest_name [{args.test_name}]\n\tconfig [{args.config}]\n\tsave_trace_json [{args.save_trace_json}]")
+    print(f"Processing jaeger traces for following args:\n\tservice_name_for_traces [{args.service_name_for_traces}]\n\tdata_dir [{args.data_dir}]\n\tlimit [{args.limit}]\n\ttest_name [{args.test_name}]\n\tconfig [{args.config}]\n\tsave_trace_json [{args.save_trace_json}]\n\tdefault_service_name [{args.default_service_name}]")
+
+    if args.default_service_name:
+        DEFAULT_SERVICE_NAME = args.default_service_name
 
     jaeger_service_to_container_mapping = parse_config_file(args.data_dir)
 
     process_traces(args.service_name_for_traces, args.data_dir, args.limit, args.test_name, args.config, jaeger_service_to_container_mapping, args.save_trace_json)
+
+if __name__ == "__main__":
+    main()

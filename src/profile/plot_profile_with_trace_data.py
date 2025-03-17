@@ -1,11 +1,14 @@
 import argparse
 import os
 import pandas as pd
-import random
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import matplotlib.pyplot as plt
 import numpy as np
+from typing import Dict, Any, List
+import math
+
+DEFAULT_SERVICE_NAME = "nginx-web-server"
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot Jaeger trace data for a given service.")
@@ -16,6 +19,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=str, required=True, help="Data directory")
     parser.add_argument("--samples", type=int, default=10, help="Number of samples per operation")
     parser.add_argument("--plot-dir", type=str, default="outputs", help="Output directory for plots")
+    parser.add_argument("--default-service-name", type=str, help="Default service name for traces")
+
     return parser.parse_args()
 
 def load_traces_data(
@@ -25,8 +30,14 @@ def load_traces_data(
     config: str,
     container_name: str
 ) -> pd.DataFrame:
-    jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data",
-                                                   f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
+    global DEFAULT_SERVICE_NAME
+
+    jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+                                                    f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
+    if not os.path.exists(jaeger_traces_csv_file_path):
+        jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+                                                    f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
+
     jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)
     container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
     return container_jaeger_traces_df
@@ -35,6 +46,140 @@ def load_perf_data(data_dir: str) -> pd.DataFrame:
     llc_data_file: str = f"{data_dir}/data/profile_data.csv"
     df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
     return df
+
+def plot_aligned_median_resource_usage(
+    traces_df: pd.DataFrame, 
+    profile_df: pd.DataFrame, 
+    output_dir: str, 
+    config: str, 
+    container_name: str, 
+    service_name_for_traces: str
+) -> None:
+    trace_durations: List[Dict[str, Any]] = []
+    
+    for trace_id in traces_df['trace_id'].unique():
+        trace_data: pd.DataFrame = traces_df[traces_df['trace_id'] == trace_id]
+        trace_start: float = trace_data['start_time'].min()
+        trace_end: float = trace_data['end_time'].max()
+        duration: float = trace_end - trace_start
+        
+        if duration <= 0:
+            continue
+            
+        trace_durations.append({
+            'trace_id': trace_id,
+            'start_time': trace_start,
+            'end_time': trace_end,
+            'duration': duration
+        })
+    
+    if not trace_durations:
+        print("No valid traces found with positive duration.")
+        return
+        
+    durations_df: pd.DataFrame = pd.DataFrame(trace_durations)
+    median_duration: float = durations_df['duration'].median()
+    print(f"Median trace duration: {median_duration} microseconds")
+    
+    normalized_perf_data: List[Dict[str, Any]] = []
+    
+    for trace_info in trace_durations:
+        trace_id: str = trace_info['trace_id']
+        trace_start: float = trace_info['start_time']
+        trace_end: float = trace_info['end_time']
+        trace_duration: float = trace_info['duration']
+        
+        trace_perf_data: pd.DataFrame = profile_df[
+            (profile_df['Time'] >= trace_start) & 
+            (profile_df['Time'] <= trace_end)
+        ]
+        
+        if trace_perf_data.empty:
+            continue
+            
+        for _, row in trace_perf_data.iterrows():
+            absolute_time: float = row['Time']
+            relative_position: float = (absolute_time - trace_start) / trace_duration
+            
+            relative_position = max(0, min(1, relative_position))
+            
+            normalized_perf_data.append({
+                'trace_id': trace_id,
+                'absolute_time': absolute_time,
+                'relative_position': relative_position,
+                'LLC-loads': row['LLC-loads'],
+                'LLC-misses': row['LLC-misses'],
+                'Instructions': row['Instructions']
+            })
+    
+    if not normalized_perf_data:
+        print("No performance data found within trace windows.")
+        return
+        
+    norm_df: pd.DataFrame = pd.DataFrame(normalized_perf_data)
+    
+    num_bins_in_microseconds: int = math.ceil(median_duration)
+    
+    bin_edges: np.ndarray = np.linspace(0, 1, num_bins_in_microseconds + 1)
+    bin_centers: np.ndarray = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+    binned_llc_loads: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
+    binned_llc_misses: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
+    binned_instructions: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
+    
+    for _, row in norm_df.iterrows():
+        bin_idx: int = min(int(row['relative_position'] * num_bins_in_microseconds), num_bins_in_microseconds - 1)
+        binned_llc_loads[bin_idx].append(row['LLC-loads'])
+        binned_llc_misses[bin_idx].append(row['LLC-misses'])
+        binned_instructions[bin_idx].append(row['Instructions'])
+    
+    median_llc_loads: List[float] = []
+    median_llc_misses: List[float] = []
+    median_instructions: List[float] = []
+    valid_bin_centers: List[float] = []
+    
+    for i in range(num_bins_in_microseconds):
+        if binned_llc_loads[i] and binned_llc_misses[i] and binned_instructions[i]:
+            median_llc_loads.append(np.median([x for x in binned_llc_loads[i] if x > 0]))
+            median_llc_misses.append(np.median([x for x in binned_llc_misses[i] if x > 0]))
+            median_instructions.append(np.median([x for x in binned_instructions[i] if x > 0]))
+            valid_bin_centers.append(bin_centers[i])
+    
+    time_points: np.ndarray = np.array(valid_bin_centers) * median_duration
+    
+    fig: plt.Figure
+    axs: List[plt.Axes]
+    fig, axs = plt.subplots(2, 1, figsize=(15, 10))
+    fig.suptitle(
+        f"{container_name} | {service_name_for_traces} | {config}\n"
+        f"Aligned Median Resource Usage (Median Duration: {median_duration:.2f} μs)",
+        fontsize=14, fontweight='bold'
+    )
+    
+    # Plot LLC Loads and LLC Misses together
+    axs[0].scatter(time_points, median_llc_loads, s=10, alpha=0.7, color="blue", label="LLC Loads")
+    axs[0].scatter(time_points, median_llc_misses, s=10, alpha=0.7, color="red", label="LLC Misses")
+    axs[0].set_title("Median LLC Loads and LLC Misses")
+    axs[0].set_ylabel("Count")
+    axs[0].set_xlim(0, median_duration)
+    axs[0].legend()
+    
+    # Plot Instructions
+    axs[1].scatter(time_points, median_instructions, s=10, alpha=0.7, color="green", label="Instructions")
+    axs[1].set_title("Median Instructions")
+    axs[1].set_xlabel("Relative Time (μs)")
+    axs[1].set_ylabel("Count")
+    axs[1].set_xlim(0, median_duration)
+    axs[1].legend()
+    
+    plt.tight_layout()
+    plot_path: str = f"{output_dir}/aligned_median_resource_usage_plot_{config}.png"
+    plt.savefig(plot_path)
+    plt.close()
+    
+    print(f"Aligned median resource usage plot saved to {plot_path}")
+    print(f"Number of traces analyzed: {len(durations_df)}")
+    print(f"Number of bins with data: {len(valid_bin_centers)}")
 
 def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
     trace_stats = []
@@ -48,13 +193,11 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
         trace_start = trace_sample['start_time'].min()
         trace_end = trace_sample['end_time'].max()
         
-        # Skip traces that are outside the performance data time range
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
         if trace_start < min_perf_time or trace_end > max_perf_time:
             continue
         
-        # Get performance data for this trace's time window
         trace_perf_data = profile_df[
             (profile_df['Time'] >= trace_start) & 
             (profile_df['Time'] <= trace_end)
@@ -63,12 +206,10 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
         if trace_perf_data.empty:
             continue
         
-        # Count non-zero values
         non_zero_llc_loads = (trace_perf_data['LLC-loads'] > 0).sum()
         non_zero_llc_misses = (trace_perf_data['LLC-misses'] > 0).sum()
         non_zero_instructions = (trace_perf_data['Instructions'] > 0).sum()
         
-        # Sum of all three metrics
         total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
         
         trace_stats.append({
@@ -79,14 +220,12 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
             'total_resource_usage': total_resource_usage
         })
     
-    # Sort by total resource usage (descending)
     trace_stats_df = pd.DataFrame(trace_stats)
     if trace_stats_df.empty:
         return pd.DataFrame()
     
     trace_stats_df = trace_stats_df.sort_values(by='total_resource_usage', ascending=False)
     
-    # Get top N traces
     top_traces = trace_stats_df.head(num_samples)
     
     print(f"Top {len(top_traces)} traces by resource usage:")
@@ -97,7 +236,6 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
               f"Non-zero instructions: {row['non_zero_instructions']}, "
               f"Total: {row['total_resource_usage']}")
     
-    # Get the full trace data for these top traces
     selected_traces = pd.DataFrame()
     for trace_id in top_traces['trace_id']:
         trace_data = traces_df[traces_df['trace_id'] == trace_id]
@@ -247,6 +385,8 @@ def plot_traces_start_end_times_and_perf_data(
     print(f"Plot saved to {output_dir}/traces_instructions_plot.png")
 
 def main() -> None:
+    global DEFAULT_SERVICE_NAME
+
     args: argparse.Namespace = parse_arguments()
     test_name: str = args.test_name.replace(" ", "_")
     service_name_for_traces: str = args.service_name_for_traces
@@ -255,17 +395,27 @@ def main() -> None:
     data_dir: str = args.data_dir
     samples: int = args.samples
     plot_dir: str = args.plot_dir
-    os.makedirs(plot_dir, exist_ok=True)
+    
+    if args.default_service_name:
+        DEFAULT_SERVICE_NAME = args.default_service_name
 
     print(f"Loading data from {data_dir} for test {test_name} with config {config}")
     print(f"Container name: {container_name}")
     print(f"Service name for traces: {service_name_for_traces}")
     print(f"Samples per operation: {samples}")
     print(f"Plot directory: {plot_dir}")
+    print(f"Default service name: {DEFAULT_SERVICE_NAME}")
     
     container_jaeger_traces_df: pd.DataFrame = load_traces_data(
         data_dir, service_name_for_traces, test_name, config, container_name)
     profile_df: pd.DataFrame = load_perf_data(data_dir)
+
+    if container_jaeger_traces_df.empty:
+        print(f"No traces found for container [{container_name}] with service name [{service_name_for_traces}]")
+        return
+    if profile_df.empty:
+        print(f"No performance data found for container [{container_name}]")
+        return
 
     edt = ZoneInfo("America/New_York")
     min_perf_time = profile_df['Time'].min()
@@ -278,6 +428,15 @@ def main() -> None:
     max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
     print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
     print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
+
+    plot_aligned_median_resource_usage(
+        container_jaeger_traces_df,
+        profile_df,
+        plot_dir,
+        config,
+        container_name,
+        service_name_for_traces
+    )
 
     plot_traces_start_end_times_and_perf_data(
         container_jaeger_traces_df,

@@ -7,6 +7,8 @@ import os
 import numpy as np
 from typing import Tuple
 
+DEFAULT_SERVICE_NAME = "nginx-web-server"
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot Jaeger trace data for a given service.")
     parser.add_argument("--test-name", type=str, required=True, help="Test name")
@@ -15,6 +17,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--config", type=str, required=True, help="Test configuration")
     parser.add_argument("--data-dir", type=str, required=True, help="Data directory")
     parser.add_argument("--plot-dir", type=str, required=True, help="Plot directory")
+    parser.add_argument("--default-service-name", type=str, help="Default service name for traces")
     
     return parser.parse_args()
 
@@ -25,8 +28,14 @@ def load_data(
         config: str,
         container_name: str
         ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    global DEFAULT_SERVICE_NAME
+
     jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
                                                     f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
+    if not os.path.exists(jaeger_traces_csv_file_path):
+        jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+                                                    f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
+
     jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)
     container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
     per_service_operation_stats: pd.DataFrame = (
@@ -154,6 +163,8 @@ def plot_jaeger_service_data(
     print("Done plotting Jaeger trace data")
 
 def main() -> None:
+    global DEFAULT_SERVICE_NAME
+
     args: argparse.Namespace = parse_arguments()
 
     test_name: str = args.test_name.replace(" ", "_")
@@ -163,6 +174,9 @@ def main() -> None:
     data_dir: str = args.data_dir
     plot_dir: str = args.plot_dir
 
+    if args.default_service_name:
+        DEFAULT_SERVICE_NAME = args.default_service_name
+
     print("Plotting Jaeger trace data")
     print(f"Test Name: {test_name}")
     print(f"Service Name for Traces: {service_name_for_traces}")
@@ -170,6 +184,7 @@ def main() -> None:
     print(f"Config: {config}")
     print(f"Data Directory: {data_dir}")
     print(f"Plot Directory: {plot_dir}")
+    print(f"Default Service Name: {DEFAULT_SERVICE_NAME}")
 
     container_jaeger_traces_df, per_service_operation_stats, unique_services = load_data(
         data_dir, service_name_for_traces, test_name, config, container_name)
