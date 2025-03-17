@@ -5,11 +5,11 @@
 #include <time.h>
 
 typedef struct {
-    struct timespec real_time;  // Real timestamp (seconds + nanoseconds)
-    uint64_t monotonic_time;    // Monotonic time in nanoseconds (for precise intervals)
-    uint64_t llc_loads;
-    uint64_t llc_misses;
-    uint64_t instr_retired;
+    uint64_t monotonic_time;  // Monotonic clock time in nanoseconds
+    uint64_t real_time;       // Real clock time in nanoseconds
+    uint64_t llc_loads;       // LLC loads counter delta
+    uint64_t llc_misses;      // LLC misses counter delta
+    uint64_t instr_retired;   // Instructions retired counter delta
 } sample_t;
 
 #endif /* _PROFILE_CORE_H */

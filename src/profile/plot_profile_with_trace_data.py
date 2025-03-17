@@ -14,7 +14,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--container-name", type=str, required=True, help="Service name")
     parser.add_argument("--config", type=str, required=True, help="Test configuration")
     parser.add_argument("--data-dir", type=str, required=True, help="Data directory")
-    parser.add_argument("--samples", type=int, default=3, help="Number of samples per operation")
+    parser.add_argument("--samples", type=int, default=10, help="Number of samples per operation")
     parser.add_argument("--plot-dir", type=str, default="outputs", help="Output directory for plots")
     return parser.parse_args()
 
@@ -36,11 +36,10 @@ def load_perf_data(data_dir: str) -> pd.DataFrame:
     df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
     return df
 
-def get_samples(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
-    sampled_traces = pd.DataFrame()
+def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
+    trace_stats = []
     trace_ids = list(traces_df['trace_id'].unique())
-    random.shuffle(trace_ids)
-
+    
     min_perf_time = profile_df['Time'].min()
     max_perf_time = profile_df['Time'].max()
     
@@ -49,16 +48,62 @@ def get_samples(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: 
         trace_start = trace_sample['start_time'].min()
         trace_end = trace_sample['end_time'].max()
         
+        # Skip traces that are outside the performance data time range
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
         if trace_start < min_perf_time or trace_end > max_perf_time:
             continue
-
-        sampled_traces = pd.concat([sampled_traces, trace_sample])
-        if len(sampled_traces) == num_samples:
-            break
+        
+        # Get performance data for this trace's time window
+        trace_perf_data = profile_df[
+            (profile_df['Time'] >= trace_start) & 
+            (profile_df['Time'] <= trace_end)
+        ]
+        
+        if trace_perf_data.empty:
+            continue
+        
+        # Count non-zero values
+        non_zero_llc_loads = (trace_perf_data['LLC-loads'] > 0).sum()
+        non_zero_llc_misses = (trace_perf_data['LLC-misses'] > 0).sum()
+        non_zero_instructions = (trace_perf_data['Instructions'] > 0).sum()
+        
+        # Sum of all three metrics
+        total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
+        
+        trace_stats.append({
+            'trace_id': trace_id,
+            'non_zero_llc_loads': non_zero_llc_loads,
+            'non_zero_llc_misses': non_zero_llc_misses,
+            'non_zero_instructions': non_zero_instructions,
+            'total_resource_usage': total_resource_usage
+        })
     
-    return sampled_traces
+    # Sort by total resource usage (descending)
+    trace_stats_df = pd.DataFrame(trace_stats)
+    if trace_stats_df.empty:
+        return pd.DataFrame()
+    
+    trace_stats_df = trace_stats_df.sort_values(by='total_resource_usage', ascending=False)
+    
+    # Get top N traces
+    top_traces = trace_stats_df.head(num_samples)
+    
+    print(f"Top {len(top_traces)} traces by resource usage:")
+    for i, (_, row) in enumerate(top_traces.iterrows()):
+        print(f"  {i+1}. Trace ID: {row['trace_id']}, "
+              f"Non-zero LLC loads: {row['non_zero_llc_loads']}, "
+              f"Non-zero LLC misses: {row['non_zero_llc_misses']}, "
+              f"Non-zero instructions: {row['non_zero_instructions']}, "
+              f"Total: {row['total_resource_usage']}")
+    
+    # Get the full trace data for these top traces
+    selected_traces = pd.DataFrame()
+    for trace_id in top_traces['trace_id']:
+        trace_data = traces_df[traces_df['trace_id'] == trace_id]
+        selected_traces = pd.concat([selected_traces, trace_data])
+    
+    return selected_traces
 
 def get_transformed_traces_df(traces_df: pd.DataFrame) -> pd.DataFrame:
     transformed_traces_df = traces_df.groupby(['trace_id']).agg(
@@ -82,9 +127,9 @@ def plot_profile_with_traces(
     transformed_traces_df["end_time"] = transformed_traces_df["end_time"].astype(float)
     num_plots = 0
 
-    print(f"Trying to plot [{num_samples} / {len(transformed_traces_df)}] traces")
+    print(f"Plotting top {min(num_samples, len(transformed_traces_df))} traces by resource usage")
 
-    for _, trace in transformed_traces_df.iterrows():
+    for i, trace in transformed_traces_df.iterrows():
         if num_plots == num_samples:
             break
 
@@ -100,12 +145,16 @@ def plot_profile_with_traces(
             print(f"No performance data found for trace_id {trace['trace_id']}")
             continue
 
-        fig, axs = plt.subplots(2, 1, figsize=(15, 10))
+        # Calculate resource usage stats for this trace
+        non_zero_llc_loads = (plot_profile_df['LLC-loads'] > 0).sum()
+        non_zero_llc_misses = (plot_profile_df['LLC-misses'] > 0).sum()
+        non_zero_instructions = (plot_profile_df['Instructions'] > 0).sum()
+        total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
 
-        zoom_margin = 0.1 * (trace_end - trace_start)
-        zoomed_plot_profile_df = plot_profile_df[
-            (plot_profile_df["Time"] >= trace_start - zoom_margin) &
-            (plot_profile_df["Time"] <= trace_end + zoom_margin)
+        zoom_margin = 0.01 * (trace_end - trace_start)
+        zoomed_plot_profile_df = profile_df[
+            (profile_df["Time"] >= trace_start - zoom_margin) &
+            (profile_df["Time"] <= trace_end + zoom_margin)
         ]
         zoomed_plot_profile_df = zoomed_plot_profile_df.sort_values(by="Time")
 
@@ -125,7 +174,12 @@ def plot_profile_with_traces(
                 break
 
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
-        fig.suptitle(container_name + "    |    " + service_name_for_traces + "    |    " + cache_partitions_str, fontsize=16, fontweight='bold')
+        fig.suptitle(
+            f"{container_name} | {service_name_for_traces} | {cache_partitions_str}\n"
+            f"Trace ID: {trace['trace_id']} | Resource Usage: LLC-loads={non_zero_llc_loads}, "
+            f"LLC-misses={non_zero_llc_misses}, Instructions={non_zero_instructions}", 
+            fontsize=14, fontweight='bold'
+        )
 
         axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, color="blue", label="LLC Loads")
         axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, color="red", label="LLC Misses")
@@ -148,7 +202,7 @@ def plot_profile_with_traces(
 
         num_plots += 1
 
-        print(f"Plots saved to {output_dir}/trace_{num_plots}_perf_plot.png and {output_dir}/trace_{num_plots}_zoomed_perf_plot.png")
+        print(f"Plot {num_plots} saved: trace_id={trace['trace_id']}, resource_usage={total_resource_usage}")
 
 def plot_traces_start_end_times_and_perf_data(
     container_traces_df: pd.DataFrame,
@@ -231,7 +285,16 @@ def main() -> None:
         plot_dir
     )
 
-    transformed_traces_df = get_transformed_traces_df(container_jaeger_traces_df)
+    highest_resource_usage_traces = get_highest_resource_usage_traces(
+        container_jaeger_traces_df,
+        profile_df,
+        samples
+    )
+    if highest_resource_usage_traces.empty:
+        print("No traces found with performance data.")
+        return
+
+    transformed_traces_df = get_transformed_traces_df(highest_resource_usage_traces)
     plot_profile_with_traces(transformed_traces_df, profile_df, plot_dir, samples, config, container_name, service_name_for_traces)
     
     print("Plot generation complete.")

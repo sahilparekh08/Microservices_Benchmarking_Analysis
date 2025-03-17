@@ -9,7 +9,6 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/resource.h>
 #include <string.h>
 #include <signal.h>
 #include "profile_core.h"
@@ -32,56 +31,30 @@
 #define INSTR_RETIRED_UMASK   0x00
 
 // Buffer size settings
-#define BATCH_SIZE 1000
-#define BUFFER_SIZE 1000000 // Number of samples to keep in memory before flushing to disk
-#define WAIT_TIME_BETWEEN_SAMPLES_IN_NS 10000  // Time to wait between samples in nanoseconds
+#define BUFFER_SIZE 50000000 // Allow up to 50 million samples in memory
 
 // Global variables
-sample_t *samples;
-int sample_index = 0;
+sample_t *mapped_file;
 uint64_t total_samples = 0;
+size_t file_size;
 int output_file_fd = -1;
+volatile int should_exit = 0;
 
-// MSR access helper functions
-int open_msr(int core) {
+// MSR access helper functions - optimized inline versions
+static inline int open_msr(int core) {
     char msr_path[64];
     snprintf(msr_path, sizeof(msr_path), "/dev/cpu/%d/msr", core);
     return open(msr_path, O_RDWR);
 }
 
-uint64_t read_msr(int fd, uint32_t reg) {
+static inline uint64_t read_msr(int fd, uint32_t reg) {
     uint64_t value;
-    if (pread(fd, &value, sizeof(value), reg) != sizeof(value)) {
-        perror("Error reading MSR");
-        exit(EXIT_FAILURE);
-    }
+    pread(fd, &value, sizeof(value), reg);
     return value;
 }
 
-void write_msr(int fd, uint32_t reg, uint64_t value) {
-    if (pwrite(fd, &value, sizeof(value), reg) != sizeof(value)) {
-        perror("Error writing MSR");
-        exit(EXIT_FAILURE);
-    }
-}
-
-// Flush the current buffer to disk
-void flush_buffer_to_disk() {
-    if (sample_index == 0) return;  // Nothing to flush
-
-    if(write(output_file_fd, samples, sizeof(sample_t) * sample_index) != sizeof(sample_t) * sample_index) {
-        perror("Error writing to output file");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Reset the buffer index
-    sample_index = 0;
-    
-    // Flush to ensure data is written
-    if (fsync(output_file_fd) == -1) {
-        perror("Error flushing output file");
-        exit(EXIT_FAILURE);
-    }
+static inline void write_msr(int fd, uint32_t reg, uint64_t value) {
+    pwrite(fd, &value, sizeof(value), reg);
 }
 
 // Setup PMU counters
@@ -110,47 +83,62 @@ void setup_pmu(int msr_fd) {
     write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0x7);
 }
 
-// Get current timestamp in nanoseconds (monotonic clock for precise intervals)
-uint64_t get_monotonic_ns() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-}
-
-// Get real timestamp (for correlation with other system events)
-void get_real_time(struct timespec *ts) {
-    clock_gettime(CLOCK_REALTIME, ts);
-}
-
-// Open output file and prepare for streaming
-void open_output_file(const char *filename) {
-    output_file_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+// Open output file and prepare for memory mapping
+void open_output_file(const char *filename, uint64_t max_samples) {
+    output_file_fd = open(filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (output_file_fd == -1) {
         perror("Error opening output file");
         exit(EXIT_FAILURE);
     }
-}
-
-// Close output file and finalize
-void close_output_file() {
-    if(output_file_fd != -1) {
-        flush_buffer_to_disk();
+    
+    // Set file size
+    file_size = sizeof(sample_t) * max_samples;
+    if (ftruncate(output_file_fd, file_size) == -1) {
+        perror("Error setting file size");
         close(output_file_fd);
+        exit(EXIT_FAILURE);
     }
-    output_file_fd = -1;
+    
+    // Map the file into memory - use MAP_POPULATE to preload pages
+    mapped_file = mmap(NULL, file_size, PROT_WRITE, MAP_SHARED | MAP_POPULATE, output_file_fd, 0);
+    if (mapped_file == MAP_FAILED) {
+        perror("Error mapping file");
+        close(output_file_fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    // Advise kernel about our access pattern
+    madvise(mapped_file, file_size, MADV_SEQUENTIAL);
 }
 
-// Signal handler for graceful termination
+// Finalize output file
+void close_output_file() {
+    if (mapped_file != MAP_FAILED && mapped_file != NULL) {
+        // Resize file to match actual samples
+        if (ftruncate(output_file_fd, sizeof(sample_t) * total_samples) == -1) {
+            perror("Warning: Error resizing output file");
+        }
+        
+        // Unmap memory
+        if (munmap(mapped_file, file_size) == -1) {
+            perror("Warning: Error unmapping file");
+        }
+        mapped_file = NULL;
+    }
+    
+    if (output_file_fd != -1) {
+        close(output_file_fd);
+        output_file_fd = -1;
+    }
+}
+
+// Signal handler
 void signal_handler(int signum) {
-    printf("\nReceived signal %d. Cleaning up and exiting...\n", signum);
-    close_output_file();
-    free(samples);
-    exit(0);
+    printf("\nReceived signal %d. Will exit after current batch.\n", signum);
+    should_exit = 1;
 }
 
 int main(int argc, char *argv[]) {
-    printf("Profiler started. PID: %d\n", getpid());
-
     if (argc != 5) {
         printf("Usage: %s <core_to_pin> <target_core> <duration_seconds> <data_file_path>\n", argv[0]);
         return EXIT_FAILURE;
@@ -160,150 +148,135 @@ int main(int argc, char *argv[]) {
     int target_core = atoi(argv[2]);
     int duration_sec = atoi(argv[3]);
     const char* bin_file_path = argv[4];
-
-    printf("Profiler started with core_to_pin: %d, target_core: %d, duration_sec: %d\n", core_to_pin, target_core, duration_sec);
     
-    // Set up signal handlers for graceful termination
+    printf("Ultra-High-Performance Profiler started. PID: %d\n", getpid());
+    printf("Settings: pin to core %d, profile core %d, duration %d sec\n", 
+           core_to_pin, target_core, duration_sec);
+    
+    // Set up signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
-    // Set lowest priority to minimize impact on target program
-    if (setpriority(PRIO_PROCESS, 0, 19) != 0) {
-        perror("Warning: Failed to set nice value");
+    // Set maximum real-time priority
+    struct sched_param param;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+        perror("Warning: Could not set real-time priority");
     }
-    printf("Process priority set to nice value 19 (lowest priority).\n");
     
-    // Allocate memory for in-memory buffer
-    samples = malloc(sizeof(sample_t) * BUFFER_SIZE);
-    if (!samples) {
-        perror("Failed to allocate buffer");
-        return EXIT_FAILURE;
-    }
-    printf("Buffer allocated with size %lu bytes.\n", sizeof(sample_t) * BUFFER_SIZE);
-    
-    // Open output file for streaming
-    open_output_file(bin_file_path);
-    printf("Output file opened: %s\n", bin_file_path);
-    
-    // Pin to the target core
+    // Pin to specified core
     cpu_set_t cpu_set;
     CPU_ZERO(&cpu_set);
     CPU_SET(core_to_pin, &cpu_set);
     if (sched_setaffinity(0, sizeof(cpu_set), &cpu_set) == -1) {
         perror("Error setting CPU affinity");
-        free(samples);
-        close_output_file();
         return EXIT_FAILURE;
     }
-    printf("Pinned profiler to core %d\n", core_to_pin);
     
-    // Lock memory to prevent paging
+    // Lock all memory
     if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
         perror("Warning: mlockall failed");
     }
-    printf("Memory locked to prevent paging.\n");
     
     // Open MSR device
     int msr_fd = open_msr(target_core);
     if (msr_fd < 0) {
         perror("Error opening MSR device. Try running with sudo");
-        free(samples);
-        close_output_file();
         return EXIT_FAILURE;
     }
-    printf("MSR device opened for core %d\n", target_core);
     
-    // Setup performance counters
+    // Open and map output file
+    open_output_file(bin_file_path, BUFFER_SIZE);
+    
+    // Setup PMU counters
     setup_pmu(msr_fd);
-    printf("Performance counters set up.\n");
     
-    // Sampling variables
-    uint64_t prev_llc_loads = 0, prev_llc_misses = 0, prev_instr_retired = 0;
-    uint64_t curr_llc_loads, curr_llc_misses, curr_instr_retired;
-    uint64_t start_time = get_monotonic_ns();
+    // Calculate end time
+    struct timespec ts_mono, ts_real;
+    clock_gettime(CLOCK_MONOTONIC, &ts_mono);
+    uint64_t start_time = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
     uint64_t end_time = start_time + (duration_sec * 1000000000ULL);
-    uint64_t next_sample_time = start_time + WAIT_TIME_BETWEEN_SAMPLES_IN_NS;
+    uint64_t next_status_time = start_time + 1000000000ULL;
+    uint64_t last_samples = 0;
     
-    // Batch processing variables
-    sample_t batch_samples[BATCH_SIZE];
-    int batch_index = 0;
+    // Variables for counter values
+    uint64_t prev_llc_loads = read_msr(msr_fd, IA32_PMC0);
+    uint64_t prev_llc_misses = read_msr(msr_fd, IA32_PMC1);
+    uint64_t prev_instr_retired = read_msr(msr_fd, IA32_PMC2);
+    uint64_t curr_llc_loads, curr_llc_misses, curr_instr_retired;
     
-    printf("Running on core [%d] and profiling core [%d] for [%d] seconds...\n", core_to_pin, target_core, duration_sec);
+    printf("Collection started at %lu, will run for %d seconds\n", start_time, duration_sec);
     
-    // Main sampling loop
-    while (get_monotonic_ns() < end_time) {
-        uint64_t now = get_monotonic_ns();
+    // Main profiling loop - optimized for maximum speed
+    while (!should_exit) {
+        // Get current timestamps (both monotonic and real time)
+        clock_gettime(CLOCK_MONOTONIC, &ts_mono);
+        clock_gettime(CLOCK_REALTIME, &ts_real);
         
-        // Check if it's time for the next sample
-        if (now >= next_sample_time) {
-            // Read counter values
-            curr_llc_loads = read_msr(msr_fd, IA32_PMC0);
-            curr_llc_misses = read_msr(msr_fd, IA32_PMC1);
-            curr_instr_retired = read_msr(msr_fd, IA32_PMC2);
-            
-            // Store in batch buffer - include both real time and monotonic time
-            get_real_time(&batch_samples[batch_index].real_time);
-            batch_samples[batch_index].monotonic_time = now;
-            batch_samples[batch_index].llc_loads = curr_llc_loads - prev_llc_loads;
-            batch_samples[batch_index].llc_misses = curr_llc_misses - prev_llc_misses;
-            batch_samples[batch_index].instr_retired = curr_instr_retired - prev_instr_retired;
-            
-            // Update previous values
-            prev_llc_loads = curr_llc_loads;
-            prev_llc_misses = curr_llc_misses;
-            prev_instr_retired = curr_instr_retired;
-            
-            batch_index++;
-            next_sample_time += WAIT_TIME_BETWEEN_SAMPLES_IN_NS;  // Next 10 microseconds
-
-            // Check if we need to adjust the next sample time
-            if (now > next_sample_time) {
-                next_sample_time = now + WAIT_TIME_BETWEEN_SAMPLES_IN_NS;
-            }
-            
-            // Process batch when full
-            if (batch_index == BATCH_SIZE) {
-                // Copy batch to main buffer
-                memcpy(&samples[sample_index], batch_samples, sizeof(sample_t) * batch_index);
-                sample_index += batch_index;
-                total_samples += batch_index;
-                batch_index = 0;
-                
-                // Check if we need to flush the buffer to disk
-                if (sample_index >= BUFFER_SIZE) {
-                    flush_buffer_to_disk();
-                }
-                
-                // Yield to target program
-                sched_yield();
-            }
+        uint64_t now_mono = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
+        uint64_t now_real = (uint64_t)ts_real.tv_sec * 1000000000ULL + ts_real.tv_nsec;
+        
+        if (now_mono >= end_time) {
+            break;
         }
         
-        // Very short pause to avoid burning CPU unnecessarily
-        for (int i = 0; i < 5; i++) {
-            __asm__ volatile("pause");
+        // Performance status update every second
+        if (now_mono >= next_status_time) {
+            uint64_t samples_this_second = total_samples - last_samples;
+            printf("Rate: %lu samples/sec (total: %lu)\n", samples_this_second, total_samples);
+            next_status_time += 1000000000ULL;
+            last_samples = total_samples;
         }
+        
+        // Read counter values - done in one tight block to minimize time between reads
+        curr_llc_loads = read_msr(msr_fd, IA32_PMC0);
+        curr_llc_misses = read_msr(msr_fd, IA32_PMC1);
+        curr_instr_retired = read_msr(msr_fd, IA32_PMC2);
+        
+        // Store both monotonic and real time
+        mapped_file[total_samples].monotonic_time = now_mono;
+        mapped_file[total_samples].real_time = now_real;
+        
+        // Store counter deltas directly
+        mapped_file[total_samples].llc_loads = curr_llc_loads - prev_llc_loads;
+        mapped_file[total_samples].llc_misses = curr_llc_misses - prev_llc_misses;
+        mapped_file[total_samples].instr_retired = curr_instr_retired - prev_instr_retired;
+        
+        // Update previous values
+        prev_llc_loads = curr_llc_loads;
+        prev_llc_misses = curr_llc_misses;
+        prev_instr_retired = curr_instr_retired;
+        
+        // Increment sample counter
+        total_samples++;
+        
+        // Check for buffer overflow
+        if (total_samples >= BUFFER_SIZE) {
+            printf("Buffer full at %lu samples, stopping\n", total_samples);
+            break;
+        }
+        
+        // No sleep or pause - run at absolute maximum speed
     }
     
-    // Process any remaining samples in the batch
-    if (batch_index > 0) {
-        memcpy(&samples[sample_index], batch_samples, sizeof(sample_t) * batch_index);
-        total_samples += batch_index;
-        flush_buffer_to_disk();
-    }
-    
-    // Clean up
-    write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0);  // Disable counters
+    // Disable counters
+    write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0);
     close(msr_fd);
     
-    // Close output file
+    // Print statistics
+    struct timespec end_ts;
+    clock_gettime(CLOCK_MONOTONIC, &end_ts);
+    uint64_t actual_end_time = (uint64_t)end_ts.tv_sec * 1000000000ULL + end_ts.tv_nsec;
+    double elapsed_seconds = (actual_end_time - start_time) / 1000000000.0;
+    
+    printf("\nProfiling complete:\n");
+    printf("- Total samples: %lu\n", total_samples);
+    printf("- Elapsed time: %.2f seconds\n", elapsed_seconds);
+    printf("- Average sampling rate: %.2f samples/second\n", total_samples / elapsed_seconds);
+    printf("- Data saved to: %s\n", bin_file_path);
+    
+    // Clean up
     close_output_file();
-    
-    printf("Profiling completed. Collected %lu samples.\n", total_samples);
-    printf("Data saved to %s\n", bin_file_path);
-    
-    // Free resources
-    free(samples);
     
     return 0;
 }

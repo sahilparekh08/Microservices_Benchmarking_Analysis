@@ -50,8 +50,7 @@ int main(int argc, char *argv[]) {
         // Process each sample in the chunk
         for (size_t i = 0; i < samples_read; i++) {
             // Convert real timestamp to microseconds
-            uint64_t time_us = (uint64_t)chunk[i].real_time.tv_sec * 1000000 + 
-                              (uint64_t)chunk[i].real_time.tv_nsec / 1000;
+            uint64_t time_us = chunk[i].real_time / 1000;
             
             // Write to CSV
             fprintf(f_out, "%lu,%lu,%lu,%lu\n", 

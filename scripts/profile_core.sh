@@ -64,7 +64,7 @@ LOG_DIR="$DATA_DIR/logs"
 PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/data/profile_data.csv"
 PROFILE_DATA_BIN_PATH="$DATA_DIR/data/profile_data.bin"
 
-DURATION=$((DURATION + 2))
+DURATION=$((DURATION + 5))
 
 cleanup() {
     PROFILE_CORE_COMPILED_PATH="$PROFILE_SRC_DIR/profile_core"
