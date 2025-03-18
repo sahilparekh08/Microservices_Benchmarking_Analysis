@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import math
 
 DEFAULT_SERVICE_NAME = "nginx-web-server"
@@ -47,6 +47,34 @@ def load_perf_data(data_dir: str) -> pd.DataFrame:
     df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
     return df
 
+def get_non_overlapping_longest_durations(traces_df: pd.DataFrame) -> pd.DataFrame:
+    result_rows = []
+    
+    for trace_id in traces_df['trace_id'].unique():
+        trace_data = traces_df[traces_df['trace_id'] == trace_id].copy()
+        trace_data = trace_data.sort_values(by='duration', ascending=False)
+        
+        selected_spans = []
+        
+        for _, row in trace_data.iterrows():
+            start_time = row['start_time']
+            end_time = row['end_time']
+            
+            overlaps = False
+            for span_start, span_end in selected_spans:
+                if not (end_time <= span_start or start_time >= span_end):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                selected_spans.append((start_time, end_time))
+                result_rows.append(row)
+    
+    if not result_rows:
+        return pd.DataFrame()
+    
+    return pd.DataFrame(result_rows)
+
 def plot_aligned_median_resource_usage(
     traces_df: pd.DataFrame, 
     profile_df: pd.DataFrame, 
@@ -55,13 +83,15 @@ def plot_aligned_median_resource_usage(
     container_name: str, 
     service_name_for_traces: str
 ) -> None:
+    non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
+    
     trace_durations: List[Dict[str, Any]] = []
     
-    for trace_id in traces_df['trace_id'].unique():
-        trace_data: pd.DataFrame = traces_df[traces_df['trace_id'] == trace_id]
-        trace_start: int = trace_data['start_time'].min()
-        trace_end: int = trace_data['end_time'].max()
-        duration: int = trace_end - trace_start
+    for _, row in non_overlapping_traces_df.iterrows():
+        trace_id = row['trace_id']
+        trace_start = row['start_time']
+        trace_end = row['end_time']
+        duration = row['duration']
         
         if duration <= 0:
             continue
@@ -182,25 +212,20 @@ def plot_aligned_median_resource_usage(
     print(f"Number of bins with data: {len(valid_bin_centers)}")
 
 def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
+    # Get non-overlapping spans with largest durations for each trace
+    non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
+    
     trace_stats = []
-    trace_ids = list(traces_df['trace_id'].unique())
     
     min_perf_time = profile_df['Time'].min()
     max_perf_time = profile_df['Time'].max()
     
-    for trace_id in trace_ids:
-        trace_sample = traces_df[traces_df['trace_id'] == trace_id]
-        trace_start = trace_sample['start_time'].min()
-        trace_end = trace_sample['end_time'].max()
-        duration = trace_sample['duration'].max()
+    for _, row in non_overlapping_traces_df.iterrows():
+        trace_id = row['trace_id']
+        trace_start = row['start_time']
+        trace_end = row['end_time']
+        duration = row['duration']
 
-        max_duration_row = trace_sample.loc[trace_sample['duration'].idxmax()]
-        trace_start_max_duration = max_duration_row['start_time']
-        trace_end_max_duration = max_duration_row['end_time']
-
-        if trace_start != trace_start_max_duration or trace_end != trace_end_max_duration:
-            print(f"WARNING: Trace ID {trace_id} has inconsistent start/end times. Trace start: {trace_start}, end: {trace_end}, max duration start: {trace_start_max_duration}, end: {trace_end_max_duration}, duration: {duration}")
-        
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
         if trace_start < min_perf_time or trace_end > max_perf_time:
@@ -222,6 +247,8 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
         
         trace_stats.append({
             'trace_id': trace_id,
+            'start_time': trace_start,
+            'end_time': trace_end,
             'non_zero_llc_loads': non_zero_llc_loads,
             'non_zero_llc_misses': non_zero_llc_misses,
             'non_zero_instructions': non_zero_instructions,
@@ -246,23 +273,72 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
               f"Duration: {row['duration']}, "
               f"Total: {row['total_resource_usage']}")
     
-    selected_traces = pd.DataFrame()
-    for trace_id in top_traces['trace_id']:
-        trace_data = traces_df[traces_df['trace_id'] == trace_id]
-        selected_traces = pd.concat([selected_traces, trace_data])
-    
-    return selected_traces
+    # Just return the top traces stats dataframe directly, since we already have all the info we need
+    return top_traces
 
-def get_transformed_traces_df(traces_df: pd.DataFrame) -> pd.DataFrame:
-    transformed_traces_df = traces_df.groupby(['trace_id']).agg(
-        start_time=('start_time', 'min'),
-        end_time=('end_time', 'max'),
-        container_name=('container_name', 'first')
-    ).reset_index()
-    return transformed_traces_df
+def plot_traces_start_end_times_and_perf_data(
+    traces_df: pd.DataFrame,
+    profile_df: pd.DataFrame,
+    output_dir: str
+) -> None:
+    delta = 0.0001
+    threshold = 0.001
+
+    # Get non-overlapping spans with largest durations for each trace
+    non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
+
+    plt.figure(figsize=(15, 5))
+    plt.scatter(profile_df["Time"], profile_df["Instructions"], s=10, alpha=0.7, label="Instructions")
+
+    min_perf_time = profile_df['Time'].min()
+    max_perf_time = profile_df['Time'].max()
+    
+    if not non_overlapping_traces_df.empty:
+        min_trace_time = non_overlapping_traces_df['start_time'].min()
+        max_trace_time = non_overlapping_traces_df['end_time'].max()
+        if min_trace_time < min_perf_time:
+            min_perf_time = min_trace_time
+        if max_trace_time > max_perf_time:
+            max_perf_time = max_trace_time
+
+    plt.xlim(min_perf_time, max_perf_time)
+    
+    # Use a set to avoid duplicate labels in the legend
+    start_label_used = False
+    end_label_used = False
+    
+    for _, trace in non_overlapping_traces_df.iterrows():
+        start_time = trace["start_time"]
+        end_time = trace["end_time"]
+
+        if abs(end_time - start_time) < threshold:
+            end_time += delta  
+
+        start_label = "Trace Start" if not start_label_used else ""
+        end_label = "Trace End" if not end_label_used else ""
+        
+        plt.axvline(start_time, color='red', linestyle='--', label=start_label)
+        plt.axvline(end_time, color='blue', linestyle=':', label=end_label)
+        
+        start_label_used = True
+        end_label_used = True
+    
+    plt.title("Trace Start (red --) / End (blue :) Times and Instructions (green)")
+    plt.xlabel("Time (microseconds)")
+    plt.ylabel("Count")
+    
+    # Remove duplicate labels
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys())
+    
+    plt.savefig(f"{output_dir}/traces_instructions_plot.png")
+    plt.close()
+
+    print(f"Plot saved to {output_dir}/traces_instructions_plot.png")
 
 def plot_profile_with_traces(
-    transformed_traces_df: pd.DataFrame,
+    trace_stats_df: pd.DataFrame,
     profile_df: pd.DataFrame,
     output_dir: str,
     num_samples: int,
@@ -271,18 +347,21 @@ def plot_profile_with_traces(
     service_name_for_traces: str
 ) -> None:
     profile_df["Time"] = profile_df["Time"].astype(float)
-    transformed_traces_df["start_time"] = transformed_traces_df["start_time"].astype(float)
-    transformed_traces_df["end_time"] = transformed_traces_df["end_time"].astype(float)
     num_plots = 0
 
-    print(f"Plotting top {min(num_samples, len(transformed_traces_df))} traces by resource usage")
+    print(f"Plotting top {min(num_samples, len(trace_stats_df))} traces by resource usage")
 
-    for i, trace in transformed_traces_df.iterrows():
+    for i, trace in trace_stats_df.iterrows():
         if num_plots == num_samples:
             break
 
+        trace_id = trace["trace_id"]
         trace_start = trace["start_time"]
         trace_end = trace["end_time"]
+        non_zero_llc_loads = trace["non_zero_llc_loads"]
+        non_zero_llc_misses = trace["non_zero_llc_misses"]
+        non_zero_instructions = trace["non_zero_instructions"]
+        total_resource_usage = trace["total_resource_usage"]
 
         plot_profile_df = profile_df[
             (profile_df["Time"] >= trace_start) & 
@@ -290,14 +369,8 @@ def plot_profile_with_traces(
         ]
 
         if plot_profile_df.empty:
-            print(f"No performance data found for trace_id {trace['trace_id']}")
+            print(f"No performance data found for trace_id {trace_id}")
             continue
-
-        # Calculate resource usage stats for this trace
-        non_zero_llc_loads = (plot_profile_df['LLC-loads'] > 0).sum()
-        non_zero_llc_misses = (plot_profile_df['LLC-misses'] > 0).sum()
-        non_zero_instructions = (plot_profile_df['Instructions'] > 0).sum()
-        total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
 
         zoom_margin = 0.01 * (trace_end - trace_start)
         zoomed_plot_profile_df = profile_df[
@@ -324,7 +397,7 @@ def plot_profile_with_traces(
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
         fig.suptitle(
             f"{container_name} | {service_name_for_traces} | {cache_partitions_str}\n"
-            f"Trace ID: {trace['trace_id']} | Resource Usage: LLC-loads={non_zero_llc_loads}, "
+            f"Trace ID: {trace_id} | Resource Usage: LLC-loads={non_zero_llc_loads}, "
             f"LLC-misses={non_zero_llc_misses}, Instructions={non_zero_instructions}", 
             fontsize=14, fontweight='bold'
         )
@@ -350,49 +423,7 @@ def plot_profile_with_traces(
 
         num_plots += 1
 
-        print(f"Plot {num_plots} saved: trace_id={trace['trace_id']}, resource_usage={total_resource_usage}")
-
-def plot_traces_start_end_times_and_perf_data(
-    container_traces_df: pd.DataFrame,
-    profile_df: pd.DataFrame,
-    output_dir: str
-) -> None:
-    delta = 0.0001
-    threshold = 0.001
-
-    plt.figure(figsize=(15, 5))
-    transformed_traces_df = get_transformed_traces_df(container_traces_df)
-    
-    plt.scatter(profile_df["Time"], profile_df["Instructions"], s=10, alpha=0.7, label="Instructions")
-
-    min_perf_time = profile_df['Time'].min()
-    max_perf_time = profile_df['Time'].max()
-    min_trace_time = transformed_traces_df['start_time'].min()
-    max_trace_time = transformed_traces_df['end_time'].max()
-    if min_trace_time < min_perf_time:
-        min_perf_time = min_trace_time
-    if max_trace_time > max_perf_time:
-        max_perf_time = max_trace_time
-
-    plt.xlim(min_perf_time, max_perf_time)
-    
-    for _, trace in transformed_traces_df.iterrows():
-        start_time = trace["start_time"]
-        end_time = trace["end_time"]
-
-        if abs(end_time - start_time) < threshold:
-            end_time += delta  
-
-        plt.axvline(start_time, color='red', linestyle='--', label="Trace Start")
-        plt.axvline(end_time, color='blue', linestyle=':', label="Trace End")
-    
-    plt.title("Trace Start (red --) / End (blue :) Times and Instructions (green)")
-    plt.xlabel("Time (microseconds)")
-    plt.ylabel("Count")
-    plt.savefig(f"{output_dir}/traces_instructions_plot.png")
-    plt.close()
-
-    print(f"Plot saved to {output_dir}/traces_instructions_plot.png")
+        print(f"Plot {num_plots} saved: trace_id={trace_id}, resource_usage={total_resource_usage}")
 
 def main() -> None:
     global DEFAULT_SERVICE_NAME
@@ -430,14 +461,21 @@ def main() -> None:
     edt = ZoneInfo("America/New_York")
     min_perf_time = profile_df['Time'].min()
     max_perf_time = profile_df['Time'].max()
-    min_trace_time = container_jaeger_traces_df['start_time'].min()
-    max_trace_time = container_jaeger_traces_df['end_time'].max()
-    min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-    max_perf_time_dt = datetime.fromtimestamp(max_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-    min_trace_time_dt = datetime.fromtimestamp(min_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-    max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-    print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
-    print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
+    
+    # Get non-overlapping spans for time range reporting
+    non_overlapping_traces_df = get_non_overlapping_longest_durations(container_jaeger_traces_df)
+    
+    if not non_overlapping_traces_df.empty:
+        min_trace_time = non_overlapping_traces_df['start_time'].min()
+        max_trace_time = non_overlapping_traces_df['end_time'].max()
+        min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
+        max_perf_time_dt = datetime.fromtimestamp(max_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
+        min_trace_time_dt = datetime.fromtimestamp(min_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
+        max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
+        print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
+        print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
+    else:
+        print("No valid non-overlapping traces found.")
 
     plot_aligned_median_resource_usage(
         container_jaeger_traces_df,
@@ -463,8 +501,15 @@ def main() -> None:
         print("No traces found with performance data.")
         return
 
-    transformed_traces_df = get_transformed_traces_df(highest_resource_usage_traces)
-    plot_profile_with_traces(transformed_traces_df, profile_df, plot_dir, samples, config, container_name, service_name_for_traces)
+    plot_profile_with_traces(
+        highest_resource_usage_traces, 
+        profile_df, 
+        plot_dir, 
+        samples, 
+        config, 
+        container_name, 
+        service_name_for_traces
+    )
     
     print("Plot generation complete.")
 
