@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# TODO: 
+# change num cores
+# runtime for 100, 1000 requests on same amount of cores
+# more csv data for time vs instructions / llc data for every req like in the median processing
+# check on the workload gen params
+# remove the non execution times in the trace perf plot and check the instructions, llc graphs for the non overlapping exec times for each req, basically when the exec is waiting, dont consider that time interval in the plot
+
 CURR_USER="$(whoami)"
 
 if [ "$EUID" -ne 0 ]; then

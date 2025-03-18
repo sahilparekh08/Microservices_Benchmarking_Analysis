@@ -33,6 +33,9 @@
 // Buffer size settings
 #define BUFFER_SIZE 50000000 // Allow up to 50 million samples in memory
 
+// Uncomment to print performance statistics every second
+// #define PRINT_STATS_EVERY_SECOND 1
+
 // Global variables
 sample_t *mapped_file;
 uint64_t total_samples = 0;
@@ -150,7 +153,7 @@ int main(int argc, char *argv[]) {
     const char* bin_file_path = argv[4];
     
     printf("Ultra-High-Performance Profiler started. PID: %d\n", getpid());
-    printf("Settings: pin to core %d, profile core %d, duration %d sec\n", 
+    printf("Settings: pinned to core [%d], profiling core [%d], for duration [%d sec]\n", 
            core_to_pin, target_core, duration_sec);
     
     // Set up signal handlers
@@ -196,8 +199,11 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &ts_mono);
     uint64_t start_time = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
     uint64_t end_time = start_time + (duration_sec * 1000000000ULL);
+
+    #ifdef PRINT_STATS_EVERY_SECOND
     uint64_t next_status_time = start_time + 1000000000ULL;
     uint64_t last_samples = 0;
+    #endif
     
     // Variables for counter values
     uint64_t prev_llc_loads = read_msr(msr_fd, IA32_PMC0);
@@ -220,6 +226,7 @@ int main(int argc, char *argv[]) {
             break;
         }
         
+        #ifdef PRINT_STATS_EVERY_SECOND
         // Performance status update every second
         if (now_mono >= next_status_time) {
             uint64_t samples_this_second = total_samples - last_samples;
@@ -227,6 +234,7 @@ int main(int argc, char *argv[]) {
             next_status_time += 1000000000ULL;
             last_samples = total_samples;
         }
+        #endif
         
         // Read counter values - done in one tight block to minimize time between reads
         curr_llc_loads = read_msr(msr_fd, IA32_PMC0);
