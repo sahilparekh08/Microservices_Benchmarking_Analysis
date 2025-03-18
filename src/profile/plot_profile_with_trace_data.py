@@ -59,9 +59,9 @@ def plot_aligned_median_resource_usage(
     
     for trace_id in traces_df['trace_id'].unique():
         trace_data: pd.DataFrame = traces_df[traces_df['trace_id'] == trace_id]
-        trace_start: float = trace_data['start_time'].min()
-        trace_end: float = trace_data['end_time'].max()
-        duration: float = trace_end - trace_start
+        trace_start: int = trace_data['start_time'].min()
+        trace_end: int = trace_data['end_time'].max()
+        duration: int = trace_end - trace_start
         
         if duration <= 0:
             continue
@@ -85,9 +85,9 @@ def plot_aligned_median_resource_usage(
     
     for trace_info in trace_durations:
         trace_id: str = trace_info['trace_id']
-        trace_start: float = trace_info['start_time']
-        trace_end: float = trace_info['end_time']
-        trace_duration: float = trace_info['duration']
+        trace_start: int = trace_info['start_time']
+        trace_end: int = trace_info['end_time']
+        trace_duration: int = trace_info['duration']
         
         trace_perf_data: pd.DataFrame = profile_df[
             (profile_df['Time'] >= trace_start) & 
@@ -192,6 +192,14 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
         trace_sample = traces_df[traces_df['trace_id'] == trace_id]
         trace_start = trace_sample['start_time'].min()
         trace_end = trace_sample['end_time'].max()
+        duration = trace_sample['duration'].max()
+
+        max_duration_row = trace_sample.loc[trace_sample['duration'].idxmax()]
+        trace_start_max_duration = max_duration_row['start_time']
+        trace_end_max_duration = max_duration_row['end_time']
+
+        if trace_start != trace_start_max_duration or trace_end != trace_end_max_duration:
+            print(f"WARNING: Trace ID {trace_id} has inconsistent start/end times. Trace start: {trace_start}, end: {trace_end}, max duration start: {trace_start_max_duration}, end: {trace_end_max_duration}, duration: {duration}")
         
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
@@ -217,7 +225,8 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
             'non_zero_llc_loads': non_zero_llc_loads,
             'non_zero_llc_misses': non_zero_llc_misses,
             'non_zero_instructions': non_zero_instructions,
-            'total_resource_usage': total_resource_usage
+            'total_resource_usage': total_resource_usage,
+            'duration': duration
         })
     
     trace_stats_df = pd.DataFrame(trace_stats)
@@ -234,6 +243,7 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.Da
               f"Non-zero LLC loads: {row['non_zero_llc_loads']}, "
               f"Non-zero LLC misses: {row['non_zero_llc_misses']}, "
               f"Non-zero instructions: {row['non_zero_instructions']}, "
+              f"Duration: {row['duration']}, "
               f"Total: {row['total_resource_usage']}")
     
     selected_traces = pd.DataFrame()
