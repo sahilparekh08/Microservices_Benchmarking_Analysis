@@ -51,7 +51,8 @@ if [[ -z "$TEST_NAME" || -z "$CONFIG" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$D
 fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-TRACE_SRC_DIR="$(realpath "$SCRIPTS_DIR/../src/trace")"
+SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
+TRACE_SRC_DIR="${SRC_DIR}/tracing/data_processing"
 
 PROCESS_JAEGER_TRACES_LOG_PATH="$DATA_DIR/logs/process_jaeger_traces.log"
 

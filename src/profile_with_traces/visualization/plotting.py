@@ -1,79 +1,14 @@
-import argparse
-import os
-import pandas as pd
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+"""
+Functions for plotting and visualizing trace and performance data.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, Any, List, Tuple
+import pandas as pd
+from typing import Dict, Any, List
 import math
 
-DEFAULT_SERVICE_NAME = "nginx-web-server"
-
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot Jaeger trace data for a given service.")
-    parser.add_argument("--test-name", type=str, required=True, help="Test name")
-    parser.add_argument("--service-name-for-traces", type=str, required=True, help="Service name for traces")
-    parser.add_argument("--container-name", type=str, required=True, help="Service name")
-    parser.add_argument("--config", type=str, required=True, help="Test configuration")
-    parser.add_argument("--data-dir", type=str, required=True, help="Data directory")
-    parser.add_argument("--samples", type=int, default=10, help="Number of samples per operation")
-    parser.add_argument("--plot-dir", type=str, default="outputs", help="Output directory for plots")
-    parser.add_argument("--default-service-name", type=str, help="Default service name for traces")
-
-    return parser.parse_args()
-
-def load_traces_data(
-    data_dir: str,
-    service_name_for_traces: str,
-    test_name: str,
-    config: str,
-    container_name: str
-) -> pd.DataFrame:
-    global DEFAULT_SERVICE_NAME
-
-    jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
-                                                    f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
-    if not os.path.exists(jaeger_traces_csv_file_path):
-        jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
-                                                    f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
-
-    jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)
-    container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
-    return container_jaeger_traces_df
-
-def load_perf_data(data_dir: str) -> pd.DataFrame:
-    llc_data_file: str = f"{data_dir}/data/profile_data.csv"
-    df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
-    return df
-
-def get_non_overlapping_longest_durations(traces_df: pd.DataFrame) -> pd.DataFrame:
-    result_rows = []
-    
-    for trace_id in traces_df['trace_id'].unique():
-        trace_data = traces_df[traces_df['trace_id'] == trace_id].copy()
-        trace_data = trace_data.sort_values(by='duration', ascending=False)
-        
-        selected_spans = []
-        
-        for _, row in trace_data.iterrows():
-            start_time = row['start_time']
-            end_time = row['end_time']
-            
-            overlaps = False
-            for span_start, span_end in selected_spans:
-                if not (end_time <= span_start or start_time >= span_end):
-                    overlaps = True
-                    break
-            
-            if not overlaps:
-                selected_spans.append((start_time, end_time))
-                result_rows.append(row)
-    
-    if not result_rows:
-        return pd.DataFrame()
-    
-    return pd.DataFrame(result_rows)
+from .trace_processor import get_non_overlapping_longest_durations
 
 def plot_aligned_median_resource_usage(
     traces_df: pd.DataFrame, 
@@ -83,6 +18,7 @@ def plot_aligned_median_resource_usage(
     container_name: str, 
     service_name_for_traces: str
 ) -> None:
+    """Plot aligned median resource usage across traces."""
     non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
     
     trace_durations: List[Dict[str, Any]] = []
@@ -211,76 +147,12 @@ def plot_aligned_median_resource_usage(
     print(f"Number of traces analyzed: {len(durations_df)}")
     print(f"Number of bins with data: {len(valid_bin_centers)}")
 
-def get_highest_resource_usage_traces(traces_df: pd.DataFrame, profile_df: pd.DataFrame, num_samples: int) -> pd.DataFrame:
-    # Get non-overlapping spans with largest durations for each trace
-    non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
-    
-    trace_stats = []
-    
-    min_perf_time = profile_df['Time'].min()
-    max_perf_time = profile_df['Time'].max()
-    
-    for _, row in non_overlapping_traces_df.iterrows():
-        trace_id = row['trace_id']
-        trace_start = row['start_time']
-        trace_end = row['end_time']
-        duration = row['duration']
-
-        if trace_end < min_perf_time or trace_start > max_perf_time:
-            continue
-        if trace_start < min_perf_time or trace_end > max_perf_time:
-            continue
-        
-        trace_perf_data = profile_df[
-            (profile_df['Time'] >= trace_start) & 
-            (profile_df['Time'] <= trace_end)
-        ]
-        
-        if trace_perf_data.empty:
-            continue
-        
-        non_zero_llc_loads = (trace_perf_data['LLC-loads'] > 0).sum()
-        non_zero_llc_misses = (trace_perf_data['LLC-misses'] > 0).sum()
-        non_zero_instructions = (trace_perf_data['Instructions'] > 0).sum()
-        
-        total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
-        
-        trace_stats.append({
-            'trace_id': trace_id,
-            'start_time': trace_start,
-            'end_time': trace_end,
-            'non_zero_llc_loads': non_zero_llc_loads,
-            'non_zero_llc_misses': non_zero_llc_misses,
-            'non_zero_instructions': non_zero_instructions,
-            'total_resource_usage': total_resource_usage,
-            'duration': duration
-        })
-    
-    trace_stats_df = pd.DataFrame(trace_stats)
-    if trace_stats_df.empty:
-        return pd.DataFrame()
-    
-    trace_stats_df = trace_stats_df.sort_values(by='total_resource_usage', ascending=False)
-    
-    top_traces = trace_stats_df.head(num_samples)
-    
-    print(f"Top {len(top_traces)} traces by resource usage:")
-    for i, (_, row) in enumerate(top_traces.iterrows()):
-        print(f"  {i+1}. Trace ID: {row['trace_id']}, "
-              f"Non-zero LLC loads: {row['non_zero_llc_loads']}, "
-              f"Non-zero LLC misses: {row['non_zero_llc_misses']}, "
-              f"Non-zero instructions: {row['non_zero_instructions']}, "
-              f"Duration: {row['duration']}, "
-              f"Total: {row['total_resource_usage']}")
-    
-    # Just return the top traces stats dataframe directly, since we already have all the info we need
-    return top_traces
-
 def plot_traces_start_end_times_and_perf_data(
     traces_df: pd.DataFrame,
     profile_df: pd.DataFrame,
     output_dir: str
 ) -> None:
+    """Plot trace start/end times and performance data."""
     delta = 0.0001
     threshold = 0.001
 
@@ -346,6 +218,7 @@ def plot_profile_with_traces(
     container_name: str,
     service_name_for_traces: str
 ) -> None:
+    """Plot performance profiles with trace data."""
     profile_df["Time"] = profile_df["Time"].astype(float)
     num_plots = 0
 
@@ -423,95 +296,4 @@ def plot_profile_with_traces(
 
         num_plots += 1
 
-        print(f"Plot {num_plots} saved: trace_id={trace_id}, resource_usage={total_resource_usage}")
-
-def main() -> None:
-    global DEFAULT_SERVICE_NAME
-
-    args: argparse.Namespace = parse_arguments()
-    test_name: str = args.test_name.replace(" ", "_")
-    service_name_for_traces: str = args.service_name_for_traces
-    container_name: str = args.container_name
-    config: str = args.config.replace(" ", "_")
-    data_dir: str = args.data_dir
-    samples: int = args.samples
-    plot_dir: str = args.plot_dir
-    
-    if args.default_service_name:
-        DEFAULT_SERVICE_NAME = args.default_service_name
-
-    print(f"Loading data from {data_dir} for test {test_name} with config {config}")
-    print(f"Container name: {container_name}")
-    print(f"Service name for traces: {service_name_for_traces}")
-    print(f"Samples per operation: {samples}")
-    print(f"Plot directory: {plot_dir}")
-    print(f"Default service name: {DEFAULT_SERVICE_NAME}")
-    
-    container_jaeger_traces_df: pd.DataFrame = load_traces_data(
-        data_dir, service_name_for_traces, test_name, config, container_name)
-    profile_df: pd.DataFrame = load_perf_data(data_dir)
-
-    if container_jaeger_traces_df.empty:
-        print(f"No traces found for container [{container_name}] with service name [{service_name_for_traces}]")
-        return
-    if profile_df.empty:
-        print(f"No performance data found for container [{container_name}]")
-        return
-
-    edt = ZoneInfo("America/New_York")
-    min_perf_time = profile_df['Time'].min()
-    max_perf_time = profile_df['Time'].max()
-    
-    # Get non-overlapping spans for time range reporting
-    non_overlapping_traces_df = get_non_overlapping_longest_durations(container_jaeger_traces_df)
-    
-    if not non_overlapping_traces_df.empty:
-        min_trace_time = non_overlapping_traces_df['start_time'].min()
-        max_trace_time = non_overlapping_traces_df['end_time'].max()
-        min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-        max_perf_time_dt = datetime.fromtimestamp(max_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-        min_trace_time_dt = datetime.fromtimestamp(min_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-        max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-        print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
-        print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
-    else:
-        print("No valid non-overlapping traces found.")
-
-    plot_aligned_median_resource_usage(
-        container_jaeger_traces_df,
-        profile_df,
-        plot_dir,
-        config,
-        container_name,
-        service_name_for_traces
-    )
-
-    plot_traces_start_end_times_and_perf_data(
-        container_jaeger_traces_df,
-        profile_df,
-        plot_dir
-    )
-
-    highest_resource_usage_traces = get_highest_resource_usage_traces(
-        container_jaeger_traces_df,
-        profile_df,
-        samples
-    )
-    if highest_resource_usage_traces.empty:
-        print("No traces found with performance data.")
-        return
-
-    plot_profile_with_traces(
-        highest_resource_usage_traces, 
-        profile_df, 
-        plot_dir, 
-        samples, 
-        config, 
-        container_name, 
-        service_name_for_traces
-    )
-    
-    print("Plot generation complete.")
-
-if __name__ == "__main__":
-    main()
+        print(f"Plot {num_plots} saved: trace_id={trace_id}, resource_usage={total_resource_usage}") 

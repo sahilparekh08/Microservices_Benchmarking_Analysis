@@ -32,7 +32,8 @@ fi
 
 DURATION=0
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROFILE_SRC_DIR="$(realpath "$SCRIPTS_DIR/../src/profile")"
+SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
+PROFILE_SRC_DIR="${SRC_DIR}/profiling/data_processing"
 LOG_DIR="$DATA_DIR/logs"
 
 IFS=' ' read -r -a CONFIG <<< "$CONFIG"

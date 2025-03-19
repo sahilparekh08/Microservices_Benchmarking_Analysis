@@ -1,4 +1,8 @@
-from traces_handler import get_trace_ids, get_services, parse_and_save_traces
+"""
+Process Jaeger traces.
+"""
+
+from ..data_collection.traces_handler import get_trace_ids, get_services, parse_and_save_traces
 import argparse
 import os
 

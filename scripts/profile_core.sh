@@ -59,7 +59,7 @@ fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
-PROFILE_SRC_DIR="$SRC_DIR/profile"
+PROFILE_SRC_DIR="$SRC_DIR/profiling/core"
 LOG_DIR="$DATA_DIR/logs"
 PROFILE_DATA_OUTPUT_PATH="${DATA_DIR}/data/profile_data.csv"
 PROFILE_DATA_BIN_PATH="$DATA_DIR/data/profile_data.bin"
@@ -67,8 +67,8 @@ PROFILE_DATA_BIN_PATH="$DATA_DIR/data/profile_data.bin"
 DURATION=$((DURATION + 5))
 
 cleanup() {
-    PROFILE_CORE_COMPILED_PATH="$PROFILE_SRC_DIR/profile_core"
-    DECODE_PROFILED_DATA_COMPILED_PATH="$PROFILE_SRC_DIR/decode_profiled_data"
+    PROFILE_CORE_COMPILED_PATH="$PROFILE_SRC_DIR/src/profile_core"
+    DECODE_PROFILED_DATA_COMPILED_PATH="$PROFILE_SRC_DIR/src/decode_profiled_data"
 
     if [[ -f "$PROFILE_CORE_COMPILED_PATH" ]]; then
         echo "rm $PROFILE_CORE_COMPILED_PATH"
@@ -81,29 +81,29 @@ cleanup() {
     fi
 }
 
-echo -e "\nsudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt"
-sudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/profile_core.c -o $PROFILE_SRC_DIR/profile_core -lrt || {
+echo -e "\nsudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/src/profile_core.c -o $PROFILE_SRC_DIR/src/profile_core -lrt"
+sudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/src/profile_core.c -o $PROFILE_SRC_DIR/src/profile_core -lrt || {
     echo "Failed to compile profile_core.c"
     exit 1
 }
 
-echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data"
-sudo gcc -O3 -Wall $PROFILE_SRC_DIR/decode_profiled_data.c -o $PROFILE_SRC_DIR/decode_profiled_data || {
+echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data"
+sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data || {
     echo "Failed to compile decode_profiled_data.c"
     exit 1
 }
 
 echo -e "\nStarting profiler at $(date)"
-echo "sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
-sudo $PROFILE_SRC_DIR/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
+echo "sudo $PROFILE_SRC_DIR/src/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1"
+sudo $PROFILE_SRC_DIR/src/profile_core $CORE_TO_PIN $TARGET_CORE $DURATION $PROFILE_DATA_BIN_PATH > $LOG_DIR/profile_core.log 2>&1 || {
     echo "Failed to run profile_core"
     cleanup
     exit 1
 }
 echo -e "Finished at $(date)\n"
 
-echo "sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1"
-sudo $PROFILE_SRC_DIR/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || {
+echo "sudo $PROFILE_SRC_DIR/src/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1"
+sudo $PROFILE_SRC_DIR/src/decode_profiled_data $PROFILE_DATA_BIN_PATH $PROFILE_DATA_OUTPUT_PATH > $LOG_DIR/decode_profiled_data.log 2>&1 || {
     echo "Failed to run decode_profiled_data"
     cleanup
     exit 1
@@ -113,8 +113,8 @@ LEN_PROFILED_DATA=$(wc -l < "$PROFILE_DATA_OUTPUT_PATH")
 LEN_PROFILED_DATA=$((LEN_PROFILED_DATA - 1))
 echo -e "\n$LEN_PROFILED_DATA lines of profiled data written to $PROFILE_DATA_OUTPUT_PATH"
 
-echo -e "\nrm $PROFILE_SRC_DIR/profile_core $PROFILE_SRC_DIR/decode_profiled_data"
-rm $PROFILE_SRC_DIR/profile_core $PROFILE_SRC_DIR/decode_profiled_data
+echo -e "\nrm $PROFILE_SRC_DIR/src/profile_core $PROFILE_SRC_DIR/src/decode_profiled_data"
+rm $PROFILE_SRC_DIR/src/profile_core $PROFILE_SRC_DIR/src/decode_profiled_data
 
 echo "rm $PROFILE_DATA_BIN_PATH"
 rm $PROFILE_DATA_BIN_PATH

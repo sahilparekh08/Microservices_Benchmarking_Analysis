@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -12,6 +13,21 @@
 #include <string.h>
 #include <signal.h>
 #include "profile_core.h"
+#include "msr_constants.h"
+
+// Linux-specific memory mapping flags
+#ifndef MAP_POPULATE
+#define MAP_POPULATE 0x1000
+#endif
+#ifndef MADV_SEQUENTIAL
+#define MADV_SEQUENTIAL 2
+#endif
+
+// Linux-specific CPU set type
+#ifndef CPU_SET_T_DEFINED
+typedef unsigned long cpu_set_t;
+#define CPU_SET_T_DEFINED
+#endif
 
 // MSR definitions for Haswell/Broadwell (E5 v3) architecture
 #define IA32_PERF_GLOBAL_CTRL 0x38F
@@ -37,11 +53,11 @@
 // #define PRINT_STATS_EVERY_SECOND 1
 
 // Global variables
-sample_t *mapped_file;
-uint64_t total_samples = 0;
-size_t file_size;
-int output_file_fd = -1;
-volatile int should_exit = 0;
+static sample_t *mapped_file;
+static uint64_t total_samples = 0;
+static size_t file_size;
+static int output_file_fd = -1;
+static volatile int should_exit = 0;
 
 // MSR access helper functions - optimized inline versions
 static inline int open_msr(int core) {
@@ -61,7 +77,7 @@ static inline void write_msr(int fd, uint32_t reg, uint64_t value) {
 }
 
 // Setup PMU counters
-void setup_pmu(int msr_fd) {
+int setup_pmu(int msr_fd) {
     // Disable all counters first
     write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0);
     
@@ -84,14 +100,16 @@ void setup_pmu(int msr_fd) {
     
     // Enable the configured counters (bits 0, 1, and 2)
     write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0x7);
+    
+    return 0;
 }
 
 // Open output file and prepare for memory mapping
-void open_output_file(const char *filename, uint64_t max_samples) {
+int open_output_file(const char *filename, uint64_t max_samples) {
     output_file_fd = open(filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (output_file_fd == -1) {
         perror("Error opening output file");
-        exit(EXIT_FAILURE);
+        return -1;
     }
     
     // Set file size
@@ -99,23 +117,25 @@ void open_output_file(const char *filename, uint64_t max_samples) {
     if (ftruncate(output_file_fd, file_size) == -1) {
         perror("Error setting file size");
         close(output_file_fd);
-        exit(EXIT_FAILURE);
+        return -1;
     }
     
-    // Map the file into memory - use MAP_POPULATE to preload pages
+    // Map the file into memory with MAP_POPULATE for better performance
     mapped_file = mmap(NULL, file_size, PROT_WRITE, MAP_SHARED | MAP_POPULATE, output_file_fd, 0);
     if (mapped_file == MAP_FAILED) {
         perror("Error mapping file");
         close(output_file_fd);
-        exit(EXIT_FAILURE);
+        return -1;
     }
     
     // Advise kernel about our access pattern
     madvise(mapped_file, file_size, MADV_SEQUENTIAL);
+    
+    return 0;
 }
 
 // Finalize output file
-void close_output_file() {
+void close_output_file(void) {
     if (mapped_file != MAP_FAILED && mapped_file != NULL) {
         // Resize file to match actual samples
         if (ftruncate(output_file_fd, sizeof(sample_t) * total_samples) == -1) {
@@ -226,7 +246,7 @@ int main(int argc, char *argv[]) {
             break;
         }
         
-        #ifdef PRINT_STATS_EVERY_SECOND
+#ifdef PRINT_STATS_EVERY_SECOND
         // Performance status update every second
         if (now_mono >= next_status_time) {
             uint64_t samples_this_second = total_samples - last_samples;
@@ -234,7 +254,7 @@ int main(int argc, char *argv[]) {
             next_status_time += 1000000000ULL;
             last_samples = total_samples;
         }
-        #endif
+#endif
         
         // Read counter values - done in one tight block to minimize time between reads
         curr_llc_loads = read_msr(msr_fd, IA32_PMC0);

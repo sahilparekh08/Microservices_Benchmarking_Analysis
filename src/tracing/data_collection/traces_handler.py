@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 from typing import Any, Dict, List
-from span_data import SpanData
+from ..data_models.span_data import SpanData
 
 JAEGER_URL = "http://localhost:16686"
 JAEGER_SERVICES_API_PATH = "/api/services"

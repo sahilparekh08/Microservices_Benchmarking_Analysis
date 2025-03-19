@@ -43,8 +43,9 @@ fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
-PROFILE_SRC_DIR="${SRC_DIR}/profile"
-TRACE_SRC_DIR="${SRC_DIR}/trace"
+PROFILE_SRC_DIR="${SRC_DIR}/profiling/visualization"
+TRACE_SRC_DIR="${SRC_DIR}/tracing/visualization"
+PROFILE_WITH_TRACES_DIR="${SRC_DIR}/profile_with_traces"
 
 PLOT_BASE_DIR="$DATA_DIR/plots"
 
@@ -88,14 +89,14 @@ python3 "$TRACE_SRC_DIR/plot_jaeger_data.py" \
 
 PLOT_DIR="$PLOT_BASE_DIR/perf_with_traces"
 PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH="$DATA_DIR/logs/plot_profile_with_trace_data.log"
-echo -e "\npython3 $PROFILE_SRC_DIR/plot_profile_with_trace_data.py \\
+echo -e "\npython3 $PROFILE_WITH_TRACES_DIR/visualization/plotting.py \\
     --test-name \"${TEST_NAME}\" \\
     --service-name-for-traces \"${SERVICE_NAME_FOR_TRACES}\" \\
     --container-name \"${CONTAINER_NAME}\" \\
     --config \"${CONFIG}\" \\
     --data-dir \"${DATA_DIR}\" \\
     --plot-dir \"${PLOT_DIR}\" > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1"
-python3 "$PROFILE_SRC_DIR/plot_profile_with_trace_data.py" \
+python3 "$PROFILE_WITH_TRACES_DIR/visualization/plotting.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
     --container-name "${CONTAINER_NAME}" \
