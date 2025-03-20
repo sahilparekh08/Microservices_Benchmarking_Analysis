@@ -25,7 +25,7 @@ JAEGER_TRACES_LIMIT=1
 SAVE_TRACES_JSON=false
 DATA_DIR_PARENT=""
 CORE_TO_PIN_PROFILER=""
-TARGET_CORE=""
+TARGET_CORES=""
 
 usage() {    
     echo "Usage: $0 [args]"
@@ -35,8 +35,8 @@ usage() {
     echo "  --test-name \"Compose Post\""
     echo "  --config \"t12 c400 d300 R10 cp2\""
     echo "  --docker-compose-dir \"~/workspace/DeathStarBench/socialNetwork\""
-    echo "  --core-to-pin-profiler 6"
-    echo "  --core-to-profile 7"
+    echo "  --core-to-pin-profiler 5"
+    echo "  --cores-to-profile 6,7"
     echo "Optional args:"
     echo "  --jaeger-traces-limit 100"
     echo "  --save-traces-json"
@@ -57,6 +57,9 @@ make_dirs() {
 
     echo "mkdir -p $DATA_DIR/workload/$curr_time/data"
     mkdir -p $DATA_DIR/workload/$curr_time/data
+
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data"
+    mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data
 
     echo "mkdir -p $DATA_DIR/workload/$curr_time/plots"
     mkdir -p $DATA_DIR/workload/$curr_time/plots
@@ -119,8 +122,8 @@ while [[ $# -gt 0 ]]; do
             CORE_TO_PIN_PROFILER="$2"
             shift 2
             ;;
-        --core-to-profile)
-            TARGET_CORE="$2"
+        --cores-to-profile)
+            TARGET_CORES="$2"
             shift 2
             ;;
         --jaeger-traces-limit)
@@ -145,7 +148,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" || -z "$CORE_TO_PIN_PROFILER" || -z "$TARGET_CORE" ]]; then
+if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" || -z "$CORE_TO_PIN_PROFILER" || -z "$TARGET_CORES" ]]; then
     usage
 fi
 
@@ -166,7 +169,7 @@ echo "TEST_NAME: $TEST_NAME"
 echo "CONFIG: $CONFIG"
 echo "DOCKER_COMPOSE_DIR: $DOCKER_COMPOSE_DIR"
 echo "CORE_TO_PIN_PROFILER: $CORE_TO_PIN_PROFILER"
-echo -e "TARGET_CORE: $TARGET_CORE\n"
+echo -e "TARGET_CORES: $TARGET_CORES\n"
 
 make_dirs $curr_time
 
@@ -213,11 +216,13 @@ echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running profile_core.sh"
-$SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-core "$TARGET_CORE" --config "$CONFIG" --data-dir "$DATA_DIR" || {
+$SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-cores "$TARGET_CORES" --config "$CONFIG" --data-dir "$DATA_DIR" || {
     echo "Failed to profile core"
     exit 1
 }
 echo -e "--------------------------------------------------\n"
+
+exit 0
 
 echo "sleep 5"
 sleep 5

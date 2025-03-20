@@ -50,47 +50,31 @@ if [[ -z "$TEST_NAME" || -z "$CONFIG" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$D
     exit 1
 fi
 
+echo "Processing Jaeger traces with the following parameters:"
+echo "  Test name: $TEST_NAME"
+echo "  Config: $CONFIG"
+echo "  Service name for traces: $SERVICE_NAME_FOR_TRACES"
+echo "  Data directory: $DATA_DIR"
+echo "  Limit: $LIMIT"
+echo "  Save traces as JSON: $SAVE_TRACES_JSON"
+
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TRACE_SRC_DIR="$(realpath "$SCRIPTS_DIR/../src/trace")"
 
 PROCESS_JAEGER_TRACES_LOG_PATH="$DATA_DIR/logs/process_jaeger_traces.log"
 
+CMD="python3 $TRACE_SRC_DIR/process_jaeger_traces.py"
+CMD="$CMD --service-name-for-traces $SERVICE_NAME_FOR_TRACES"
+CMD="$CMD --data-dir $DATA_DIR"
+CMD="$CMD --limit $LIMIT"
+CMD="$CMD --test-name $TEST_NAME"
+CMD="$CMD --config $CONFIG"
 if [ "$SAVE_TRACES_JSON" = true ]; then
-    echo -e "Saving Jaeger traces as JSON in $DATA_DIR/data"
-
-    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
-        --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
-        --data-dir \"$DATA_DIR\" \\
-        --limit \"$LIMIT\" \\ 
-        --test-name \"$TEST_NAME\" \\
-        --config \"$CONFIG\" \\
-        --save-traces-json > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
-
-    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
-        --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
-        --data-dir "$DATA_DIR" \
-        --limit "$LIMIT" \
-        --test-name "$TEST_NAME" \
-        --config "$CONFIG" \
-        --save-traces-json > "$PROCESS_JAEGER_TRACES_LOG_PATH" 2>&1 || {
-        echo "Error: Failed to process Jaeger traces. See $PROCESS_JAEGER_TRACES_LOG_PATH for details."
-        exit 1
-    }
-else
-    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
-        --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
-        --data-dir \"$DATA_DIR\" \\
-        --limit \"$LIMIT\" \\
-        --test-name \"$TEST_NAME\" \\
-        --config \"$CONFIG\" > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
-
-    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
-        --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
-        --data-dir "$DATA_DIR" \
-        --limit "$LIMIT" \
-        --test-name "$TEST_NAME" \
-        --config "$CONFIG" > "$PROCESS_JAEGER_TRACES_LOG_PATH" 2>&1 || {
-        echo "Error: Failed to process Jaeger traces. See $PROCESS_JAEGER_TRACES_LOG_PATH for details."
-        exit 1
-    }
+    CMD="$CMD --save-traces-json"
 fi
+
+echo "Running command: $CMD > $PROCESS_JAEGER_TRACES_LOG_PATH 2>&1"
+$CMD > $PROCESS_JAEGER_TRACES_LOG_PATH 2>&1 || {
+    echo "Error: Failed to process Jaeger traces. See $PROCESS_JAEGER_TRACES_LOG_PATH for details."
+    exit 1
+}

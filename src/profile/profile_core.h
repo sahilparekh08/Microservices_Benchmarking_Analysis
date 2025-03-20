@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <time.h>
 
+#define PROFILE_DATA_FILE_PREFIX "profile_data_"
+#define PROFILE_DATA_FILE_SUFFIX ".bin"
+
 typedef struct {
     uint64_t monotonic_time;  // Monotonic clock time in nanoseconds
     uint64_t real_time;       // Real clock time in nanoseconds

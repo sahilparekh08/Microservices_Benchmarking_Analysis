@@ -3,31 +3,40 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 #include "profile_core.h"
 
 #define CHUNK_SIZE 1000  // Number of samples to process at once
 
-int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s <data_file> [output_file.csv]\n", argv[0]);
-        return 1;
-    }
-    
-    const char *input_file = argv[1];
-    const char *output_file = (argc == 3) ? argv[2] : "profiling_results.csv";
-    
+int process_profile_data(char* input_file) {
     FILE *f_in = fopen(input_file, "rb");
     if (!f_in) {
         perror("Error opening input file");
-        return 1;
+        return EXIT_FAILURE;
     }
+
+    char output_file[2048];
+    if (strlen(input_file) <= 4) {
+        printf("Error: Invalid input file name\n");
+        fclose(f_in);
+        return EXIT_FAILURE;
+    }
+    if(strlen(input_file) > 2048) {
+        printf("Error: Input file name too long\n");
+        fclose(f_in);
+        return EXIT_FAILURE;
+    }
+    size_t len = strlen(input_file) - 4;
+    strncpy(output_file, input_file, len);
+    output_file[strlen(input_file) - 4] = '\0';
+    strcat(output_file, ".csv");
     
     // Open output file
     FILE *f_out = fopen(output_file, "w");
     if (!f_out) {
         perror("Error opening output file");
         fclose(f_in);
-        return 1;
+        return EXIT_FAILURE;
     }
     
     // Write CSV header
@@ -39,7 +48,7 @@ int main(int argc, char *argv[]) {
         perror("Memory allocation failed for chunk");
         fclose(f_in);
         fclose(f_out);
-        return 1;
+        return EXIT_FAILURE;
     }
     
     // Read and process in chunks
@@ -69,6 +78,68 @@ int main(int argc, char *argv[]) {
     fclose(f_out);
     
     printf("Successfully wrote %ld samples to %s\n", samples_processed, output_file);
+
+    return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) { 
+        printf("Usage: %s --data-dir <dir>\n", argv[0]);
+        printf("  --data-dir: directory containing profile data bin files\n");
+        return EXIT_FAILURE;
+    }
+    
+    // Parse command line arguments
+    const char *data_dir = NULL;
+    
+    for (int i = 1; i < argc; i += 2) {
+        if (i + 1 >= argc) {
+            printf("Error: Missing value for argument %s\n", argv[i]);
+            return EXIT_FAILURE;
+        }
+        
+        if (strcmp(argv[i], "--data-dir") == 0) {
+            data_dir = argv[i + 1];
+        } else {
+            printf("Error: Unknown argument %s\n", argv[i]);
+            return EXIT_FAILURE;
+        }
+    }
+    
+    // Validate required arguments
+    if (!data_dir) {
+        printf("Error: Data directory is required\n");
+        return EXIT_FAILURE;
+    }
+
+    // TRead the directory and process each file
+    DIR *dir = opendir(data_dir);
+    if (!dir) {
+        perror("Error opening data directory");
+        return EXIT_FAILURE;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip hidden files
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        
+        // Check if file is a profile data file
+        if (strstr(entry->d_name, PROFILE_DATA_FILE_PREFIX) == NULL || 
+            strstr(entry->d_name, PROFILE_DATA_FILE_SUFFIX) == NULL) {
+            continue;
+        }
+        
+        // Process the file
+        char bin_file_path[2048];
+        snprintf(bin_file_path, sizeof(bin_file_path), "%s/%s", data_dir, entry->d_name);
+        int ret = process_profile_data(bin_file_path);
+        if (ret != EXIT_SUCCESS) {
+            printf("Error processing file: %s\n", bin_file_path);
+        }
+    }
     
     return 0;
 }
