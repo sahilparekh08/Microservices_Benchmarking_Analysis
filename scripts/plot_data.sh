@@ -6,7 +6,7 @@ CONTAINER_NAME=""
 SERVICE_NAME_FOR_TRACES=""
 CONFIG=""
 DATA_DIR=""
-
+SAVE_TRACES_PROFILE_CSV=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --test-name)
@@ -27,6 +27,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --data-dir)
             DATA_DIR="$2"
+            shift 2
+            ;;
+        --save-traces-profile-csv)
+            SAVE_TRACES_PROFILE_CSV="$2"
             shift 2
             ;;
         *)
@@ -101,6 +105,12 @@ CMD="$CMD --config $CONFIG"
 CMD="$CMD --profile-data-dir $PROFILE_DATA_DIR"
 CMD="$CMD --trace-data-dir $TRACES_DATA_DIR"
 CMD="$CMD --plot-dir $PLOT_DIR"
+
+if [ -n "$SAVE_TRACES_PROFILE_CSV" ]; then
+    CMD="$CMD --save-traces-profile-csv"
+    mkdir -p "$DATA_DIR/data/profile_with_traces"
+    CMD="$CMD --output-csv-data-dir $DATA_DIR/data/profile_with_traces"
+fi
 
 echo "Running command: $CMD"
 $CMD > "$DATA_DIR/logs/plot_profile_with_traces.log" 2>&1 || {
