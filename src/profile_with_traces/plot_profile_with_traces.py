@@ -6,10 +6,15 @@ import argparse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import pandas as pd
+import os
 from typing import Dict
 from .utils.constants import DEFAULT_SERVICE_NAME
 from .data_processing.data_loader import load_traces_data, load_perf_data
-from .data_processing.trace_processor import get_highest_resource_usage_traces, get_non_overlapping_longest_durations
+from .data_processing.trace_processor import (
+    get_highest_resource_usage_traces,
+    get_non_overlapping_longest_durations,
+    save_trace_profile_csvs
+)
 from .visualization.plotting import (
     plot_aligned_median_resource_usage,
     plot_traces_start_end_times_and_perf_data,
@@ -28,6 +33,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--plot-dir", type=str, required=True, help="Output directory for plots")
     parser.add_argument("--samples", type=int, default=10, help="Number of samples per operation")
     parser.add_argument("--default-service-name", type=str, help="Default service name for traces")
+    parser.add_argument("--save-traces-profile-csv", action="store_true", help="Save trace profile data as CSVs")
+    parser.add_argument("--output-csv-data-dir", type=str, help="Output directory for CSV data (required if --save-traces-profile-csv is set)")
 
     return parser.parse_args()
 
@@ -46,6 +53,11 @@ def main() -> None:
     if args.default_service_name:
         global DEFAULT_SERVICE_NAME
         DEFAULT_SERVICE_NAME = args.default_service_name
+
+    # Validate CSV output arguments
+    if args.save_traces_profile_csv and not args.output_csv_data_dir:
+        print("Error: --output-csv-data-dir is required when --save-traces-profile-csv is set")
+        return
 
     print(f"Loading data from {profile_data_dir} and {traces_data_dir}")
     print(f"Container name: {container_name}")
@@ -120,6 +132,16 @@ def main() -> None:
         container_name, 
         service_name_for_traces
     )
+
+    # Save trace profile CSVs if requested
+    if args.save_traces_profile_csv:
+        save_trace_profile_csvs(
+            highest_resource_usage_traces,
+            core_to_perf_data_df,
+            args.output_csv_data_dir,
+            container_name,
+            config
+        )
     
     print("Plot generation complete.")
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # TODO: 
+# multiple cores
 # runtime for 100, 1000 requests on same amount of cores
 # more csv data for time vs instructions / llc data for every req like in the median processing
 # check on the workload gen params

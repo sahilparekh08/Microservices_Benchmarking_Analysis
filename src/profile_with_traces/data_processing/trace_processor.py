@@ -4,6 +4,7 @@ Functions for processing trace data.
 
 import pandas as pd
 from typing import Dict, Any, List
+import os
 
 def get_non_overlapping_longest_durations(traces_df: pd.DataFrame) -> pd.DataFrame:
     """Get non-overlapping spans with longest durations for each trace."""
@@ -145,3 +146,71 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame, core_to_perf_data
               f"Core to LLC misses: {core_to_llc_misses_str}")
     
     return top_traces 
+
+def save_trace_profile_csvs(
+    highest_resource_usage_traces: pd.DataFrame,
+    core_to_perf_data_df: Dict[str, pd.DataFrame],
+    output_dir: str,
+    container_name: str,
+    config: str
+) -> None:
+    """Save trace profile data as CSVs with normalized timestamps."""
+    if highest_resource_usage_traces.empty:
+        print("No traces found to save profile data.")
+        return
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Initialize DataFrames for each metric
+    instructions_df = pd.DataFrame()
+    llc_loads_df = pd.DataFrame()
+    llc_misses_df = pd.DataFrame()
+
+    # Process each trace
+    for _, trace in highest_resource_usage_traces.iterrows():
+        trace_id = trace["trace_id"]
+        trace_start = trace["start_time"]
+        trace_end = trace["end_time"]
+        core_with_highest_instructions = trace["core_with_highest_instructions"]
+
+        # Get performance data for this trace
+        profile_df = core_to_perf_data_df[core_with_highest_instructions]
+        profile_df = profile_df[
+            (profile_df["Time"] >= trace_start) & 
+            (profile_df["Time"] <= trace_end)
+        ].copy()
+
+        if profile_df.empty:
+            continue
+
+        # Normalize timestamps
+        profile_df["normalized_time"] = profile_df["Time"] - trace_start
+
+        # Add instructions data from core with highest instructions
+        instructions_df[f"trace_{trace_id}"] = profile_df.set_index("normalized_time")["Instructions"]
+
+        # Sum up LLC loads and misses across all cores
+        total_llc_loads = pd.Series(0, index=profile_df.index)
+        total_llc_misses = pd.Series(0, index=profile_df.index)
+
+        for core_id, core_df in core_to_perf_data_df.items():
+            core_df = core_df[
+                (core_df["Time"] >= trace_start) & 
+                (core_df["Time"] <= trace_end)
+            ]
+            if not core_df.empty:
+                core_df = core_df.set_index("Time")
+                total_llc_loads += core_df["LLC-loads"].reindex(profile_df["Time"]).fillna(0)
+                total_llc_misses += core_df["LLC-misses"].reindex(profile_df["Time"]).fillna(0)
+
+        # Add summed LLC data to respective DataFrames
+        llc_loads_df[f"trace_{trace_id}"] = total_llc_loads.set_index(profile_df["normalized_time"])
+        llc_misses_df[f"trace_{trace_id}"] = total_llc_misses.set_index(profile_df["normalized_time"])
+
+    # Save CSVs
+    instructions_df.to_csv(os.path.join(output_dir, f"traces_instructions_core_{core_with_highest_instructions}_{container_name}_{config}.csv"))
+    llc_loads_df.to_csv(os.path.join(output_dir, f"traces_llc_loads_{container_name}_{config}.csv"))
+    llc_misses_df.to_csv(os.path.join(output_dir, f"traces_llc_misses_{container_name}_{config}.csv"))
+
+    print(f"Saved trace profile CSVs to {output_dir}") 
