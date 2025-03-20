@@ -36,8 +36,7 @@ def process_traces(service_name_for_traces: str, data_dir :str, limit: int, test
     
     trace_ids = get_trace_ids(service_name_for_traces, limit)
 
-    curr_data_dir = os.path.join(data_dir, "data")
-    df = parse_and_save_traces(service_name_for_traces, curr_data_dir, trace_ids, save_traces_json)
+    df = parse_and_save_traces(service_name_for_traces, data_dir, trace_ids, save_traces_json)
     if df is None:
         print(f"[ERROR:] No traces found for service '{service_name_for_traces}'")
         SystemExit(1)
@@ -48,7 +47,7 @@ def process_traces(service_name_for_traces: str, data_dir :str, limit: int, test
     config = config.replace(" ", "_")
 
     df_csv_file_name = f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv"
-    df_csv_file_path = os.path.join(curr_data_dir, df_csv_file_name)
+    df_csv_file_path = os.path.join(data_dir, df_csv_file_name)
     df.to_csv(df_csv_file_path, index=False)
 
     print(f"Saved traces data to {df_csv_file_path}")

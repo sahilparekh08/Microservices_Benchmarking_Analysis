@@ -1,21 +1,23 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <limits.h>
 #include "profile_core.h"
 
 #define DEFAULT_CHUNK_SIZE 1000  // Default number of samples to process at once
 #define MAX_CHUNK_SIZE 1000000   // Maximum allowed chunk size
-
-static void print_usage(const char *program_name) {
-    fprintf(stderr, "Usage: %s <data_file> [output_file.csv] [chunk_size]\n", program_name);
-    fprintf(stderr, "  data_file: Input binary file containing profiling data\n");
-    fprintf(stderr, "  output_file.csv: Optional output CSV file (default: profiling_results.csv)\n");
-    fprintf(stderr, "  chunk_size: Optional number of samples to process at once (default: %d, max: %d)\n",
-            DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE);
-}
+#define MAX_FILENAME_LEN 256     // Maximum length for filenames
 
 static int validate_chunk_size(size_t chunk_size) {
     if (chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE) {
@@ -33,25 +35,7 @@ static FILE *safe_fopen(const char *filename, const char *mode) {
     return fp;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > 4) {
-        print_usage(argv[0]);
-        return 1;
-    }
-    
-    const char *input_file = argv[1];
-    const char *output_file = (argc >= 3) ? argv[2] : "profiling_results.csv";
-    size_t chunk_size = DEFAULT_CHUNK_SIZE;
-    
-    if (argc == 4) {
-        char *endptr;
-        chunk_size = strtoul(argv[3], &endptr, 10);
-        if (*endptr != '\0' || validate_chunk_size(chunk_size) != 0) {
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-    
+static int process_file(const char *input_file, const char *output_file, size_t chunk_size) {
     FILE *f_in = safe_fopen(input_file, "rb");
     if (!f_in) {
         return 1;
@@ -122,4 +106,135 @@ int main(int argc, char *argv[]) {
     }
     
     return error_occurred ? 1 : 0;
+}
+
+static int is_profile_data_file(const char *filename) {
+    return strncmp(filename, PROFILE_DATA_PREFIX, strlen(PROFILE_DATA_PREFIX)) == 0 &&
+           strcmp(filename + strlen(filename) - 4, ".bin") == 0;
+}
+
+static int extract_core_id(const char *filename) {
+    // Extract core ID from filename (profile_data_<core_id>.bin)
+    const char *core_id_str = filename + strlen(PROFILE_DATA_PREFIX);
+    char *endptr;
+    int core_id = strtol(core_id_str, &endptr, 10);
+    
+    if (*endptr != '.' || strcmp(endptr, ".bin") != 0) {
+        return -1;
+    }
+    
+    return core_id;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 5 || argc > 7) {  // 2-3 arguments * 2 (flag + value) + 1 (program name)
+        printf("Usage: %s --data-dir <dir> [--chunk-size <size>]\n", argv[0]);
+        printf("  --data-dir: directory containing profile data bin files\n");
+        printf("  --chunk-size: optional number of samples to process at once (default: %d, max: %d)\n",
+                DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE);
+        return EXIT_FAILURE;
+    }
+    
+    // Parse command line arguments
+    const char *data_dir = NULL;
+    size_t chunk_size = DEFAULT_CHUNK_SIZE;
+    
+    for (int i = 1; i < argc; i += 2) {
+        if (i + 1 >= argc) {
+            printf("Error: Missing value for argument %s\n", argv[i]);
+            return EXIT_FAILURE;
+        }
+        
+        if (strcmp(argv[i], "--data-dir") == 0) {
+            data_dir = argv[i + 1];
+        } else if (strcmp(argv[i], "--chunk-size") == 0) {
+            char *endptr;
+            chunk_size = strtoul(argv[i + 1], &endptr, 10);
+            if (*endptr != '\0' || validate_chunk_size(chunk_size) != 0) {
+                return EXIT_FAILURE;
+            }
+        } else {
+            printf("Error: Unknown argument %s\n", argv[i]);
+            return EXIT_FAILURE;
+        }
+    }
+    
+    // Validate required arguments
+    if (!data_dir) {
+        printf("Error: Input and output directories are required\n");
+        return EXIT_FAILURE;
+    }
+    
+    // Open input directory
+    DIR *dir = opendir(data_dir);
+    if (!dir) {
+        fprintf(stderr, "Error opening input directory '%s': %s\n", data_dir, strerror(errno));
+        return EXIT_FAILURE;
+    }
+    
+    struct dirent *entry;
+    int total_files = 0;
+    int processed_files = 0;
+    int error_occurred = 0;
+    
+    // Process each file in the directory
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and .. entries
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // Check if file starts with PROFILE_DATA_PREFIX
+        if (!is_profile_data_file(entry->d_name)) {
+            continue;
+        }
+        
+        // Check if it's a regular file
+        char full_path[MAX_FILENAME_LEN];
+        snprintf(full_path, sizeof(full_path), "%s/%s", data_dir, entry->d_name);
+        
+        struct stat st;
+        if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+            fprintf(stderr, "Warning: Skipping non-regular file '%s'\n", entry->d_name);
+            continue;
+        }
+        
+        total_files++;
+        
+        // Extract core ID from filename
+        int core_id = extract_core_id(entry->d_name);
+        if (core_id == -1) {
+            fprintf(stderr, "Warning: Skipping invalid filename '%s'\n", entry->d_name);
+            continue;
+        }
+        
+        // Construct full paths
+        char input_path[MAX_FILENAME_LEN];
+        char output_path[MAX_FILENAME_LEN];
+        
+        snprintf(input_path, sizeof(input_path), "%s/%s", data_dir, entry->d_name);
+        snprintf(output_path, sizeof(output_path), "%s/profiling_results_%d.csv", data_dir, core_id);
+        
+        printf("Processing file: %s -> %s\n", input_path, output_path);
+        
+        if (process_file(input_path, output_path, chunk_size) == 0) {
+            processed_files++;
+        } else {
+            error_occurred = 1;
+        }
+    }
+    
+    closedir(dir);
+    
+    if (total_files == 0) {
+        fprintf(stderr, "No profile data files found in '%s'\n", data_dir);
+        return EXIT_FAILURE;
+    }
+    
+    printf("\nProcessing complete:\n");
+    printf("- Total files found: %d\n", total_files);
+    printf("- Successfully processed: %d\n", processed_files);
+    printf("- Failed: %d\n", total_files - processed_files);
+    
+    return error_occurred ? EXIT_FAILURE : EXIT_SUCCESS;
 }

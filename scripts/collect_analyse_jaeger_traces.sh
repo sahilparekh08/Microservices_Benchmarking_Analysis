@@ -1,15 +1,28 @@
 #!/bin/bash
 
+# Parse command line arguments
+SERVICE_NAME=""
+DATA_DIR=""
+LIMIT=""
 TEST_NAME=""
 CONFIG=""
-SERVICE_NAME_FOR_TRACES=""
-DATA_DIR=""
-LIMIT=1
-SRC_DIR=""
-SAVE_TRACES_JSON=false
+SAVE_TRACE_JSON=false
+DEFAULT_SERVICE_NAME=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --service-name-for-traces)
+            SERVICE_NAME="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR="$2"
+            shift 2
+            ;;
+        --limit)
+            LIMIT="$2"
+            shift 2
+            ;;
         --test-name)
             TEST_NAME="$2"
             shift 2
@@ -18,25 +31,13 @@ while [[ $# -gt 0 ]]; do
             CONFIG="$2"
             shift 2
             ;;
-        --service-name-for-traces)
-            SERVICE_NAME_FOR_TRACES="$2"
+        --save-trace-json)
+            SAVE_TRACE_JSON="$2"
             shift 2
             ;;
-        --data-dir)
-            DATA_DIR="$2"
+        --default-service-name)
+            DEFAULT_SERVICE_NAME="$2"
             shift 2
-            ;;
-        --limit)
-            LIMIT=$2
-            if ! [[ "$LIMIT" =~ ^[0-9]+$ ]] || [ "$LIMIT" -le 0 ]; then
-                echo "Error: --limit must be a positive integer."
-                exit 1
-            fi
-            shift 2
-            ;;
-        --save-traces-json)
-            SAVE_TRACES_JSON=true
-            shift
             ;;
         *)
             echo "Unknown option: $1"
@@ -45,53 +46,46 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$TEST_NAME" || -z "$CONFIG" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$DATA_DIR" ]]; then
-    echo "Usage: $0 --test-name TEST_NAME --config CONFIG --service-name-for-traces SERVICE_NAME_FOR_TRACES --data-dir DATA_DIR [--limit LIMIT] [--save-traces-json]"
+# Check required arguments
+if [[ -z "$SERVICE_NAME" || -z "$DATA_DIR" || -z "$LIMIT" || -z "$TEST_NAME" || -z "$CONFIG" ]]; then
+    echo "Usage: $0 --service-name-for-traces <service_name> --data-dir <data_dir> --limit <limit> --test-name <test_name> --config <config> [--save-trace-json <true/false>] [--default-service-name <default_service_name>]"
     exit 1
 fi
 
+DATA_DIR="$DATA_DIR/data/traces"
+
+echo "Processing Jaeger traces with the following parameters:"
+echo "  Service name: $SERVICE_NAME"
+echo "  Data directory: $DATA_DIR"
+echo "  Limit: $LIMIT"
+echo "  Test name: $TEST_NAME"
+echo "  Config: $CONFIG"
+echo "  Save trace JSON: $SAVE_TRACE_JSON"
+if [[ ! -z "$DEFAULT_SERVICE_NAME" ]]; then
+    echo "  Default service name: $DEFAULT_SERVICE_NAME"
+fi
+
+# Get the directory of this script
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
-TRACE_SRC_DIR="${SRC_DIR}/tracing/data_processing"
 
-PROCESS_JAEGER_TRACES_LOG_PATH="$DATA_DIR/logs/process_jaeger_traces.log"
+# Run the Python script
+CMD="python3 $SRC_DIR/tracing/data_processing/process_jaeger_traces.py"
+CMD="$CMD --service-name-for-traces $SERVICE_NAME"
+CMD="$CMD --data-dir $DATA_DIR"
+CMD="$CMD --limit $LIMIT"
+CMD="$CMD --test-name $TEST_NAME"
+CMD="$CMD --config $CONFIG"
+CMD="$CMD --save-trace-json $SAVE_TRACE_JSON"
 
-if [ "$SAVE_TRACES_JSON" = true ]; then
-    echo -e "Saving Jaeger traces as JSON in $DATA_DIR/data"
-
-    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
-        --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
-        --data-dir \"$DATA_DIR\" \\
-        --limit \"$LIMIT\" \\ 
-        --test-name \"$TEST_NAME\" \\
-        --config \"$CONFIG\" \\
-        --save-traces-json > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
-
-    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
-        --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
-        --data-dir "$DATA_DIR" \
-        --limit "$LIMIT" \
-        --test-name "$TEST_NAME" \
-        --config "$CONFIG" \
-        --save-traces-json > "$PROCESS_JAEGER_TRACES_LOG_PATH" 2>&1 || {
-        echo "Error: Failed to process Jaeger traces. See $PROCESS_JAEGER_TRACES_LOG_PATH for details."
-        exit 1
-    }
-else
-    echo -e "python3 \"$TRACE_SRC_DIR/process_jaeger_traces.py\" \\
-        --service-name-for-traces \"$SERVICE_NAME_FOR_TRACES\" \\
-        --data-dir \"$DATA_DIR\" \\
-        --limit \"$LIMIT\" \\
-        --test-name \"$TEST_NAME\" \\
-        --config \"$CONFIG\" > \"$PROCESS_JAEGER_TRACES_LOG_PATH\" 2>&1"
-
-    python3 "$TRACE_SRC_DIR/process_jaeger_traces.py" \
-        --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" \
-        --data-dir "$DATA_DIR" \
-        --limit "$LIMIT" \
-        --test-name "$TEST_NAME" \
-        --config "$CONFIG" > "$PROCESS_JAEGER_TRACES_LOG_PATH" 2>&1 || {
-        echo "Error: Failed to process Jaeger traces. See $PROCESS_JAEGER_TRACES_LOG_PATH for details."
-        exit 1
-    }
+if [[ ! -z "$DEFAULT_SERVICE_NAME" ]]; then
+    CMD="$CMD --default-service-name $DEFAULT_SERVICE_NAME"
 fi
+
+echo "Running command: $CMD"
+$CMD > "$DATA_DIR/logs/process_jaeger_traces.log" 2>&1 || {
+    echo "Failed to process Jaeger traces"
+    exit 1
+}
+
+echo "Successfully processed Jaeger traces"

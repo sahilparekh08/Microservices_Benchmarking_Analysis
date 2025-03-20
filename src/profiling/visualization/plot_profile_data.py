@@ -1,148 +1,230 @@
-import matplotlib.pyplot as plt
+"""
+Plot profile data from CSV files.
+"""
+
+import os
 import pandas as pd
+import matplotlib.pyplot as plt
 import argparse
 import numpy as np
-from typing import Tuple
+from typing import Dict, List, Tuple
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot LLC Load, Miss, and Instruction Frequencies over Time.")
-    parser.add_argument("--test-name", type=str, required=True, help="Test name")
-    parser.add_argument("--container-name", type=str, required=True, help="Service name")
-    parser.add_argument("--config", type=str, required=True, help="Configuration name")
-    parser.add_argument("--data-dir", type=str, required=True, help="Directory containing LLC data")
-    parser.add_argument("--plot-dir", type=str, required=True, help="Directory to save plots")
-    return parser.parse_args()
-
-def load_data(data_dir: str) -> pd.DataFrame:
-    perf_data_file: str = f"{data_dir}/data/profile_data.csv"
-    perf_df: pd.DataFrame = pd.read_csv(perf_data_file, sep=",")
-    perf_df["Time"] = perf_df["Time"] - perf_df["Time"].min()
-    return perf_df
-
-def calculate_percentiles(df: pd.DataFrame, column: str) -> Tuple[pd.DataFrame, float, float, float, float]:
-    data: pd.DataFrame = df[["Time", column]].copy()
-    data[column] = data[column].astype(float)
-    data[column] = data[column].replace(0, np.nan)
+def calculate_percentiles(df: pd.DataFrame, column: str) -> Tuple[float, float, float]:
+    """
+    Calculate 25th, 75th, and 99th percentiles for a column.
+    
+    Args:
+        df: DataFrame containing the data
+        column: Column name to calculate percentiles for
+        
+    Returns:
+        Tuple of (p25, p75, p99) percentiles
+    """
+    data = df[column].astype(float)
+    data = data.replace(0, np.nan)
     data = data.dropna()
-    data = data.sort_values(by="Time")
-    data['Time'] = data['Time'].astype(int)
-    data['Yime'] = data['Time'] - data['Time'].min()
+    
+    p25 = float(np.percentile(data, 25))
+    p75 = float(np.percentile(data, 75))
+    p99 = float(np.percentile(data, 99))
+    
+    return p25, p75, p99
 
-    median: float = float(np.median(data[column]))
-    p25: float = float(np.percentile(data[column], 25))
-    p75: float = float(np.percentile(data[column], 75))
-    p99: float = float(np.percentile(data[column], 99))
-    print(f"{column} Median: {median:.2f} | 25th: {p25:.2f} | 75th: {p75:.2f} | 99th: {p99:.2f}")
-    return data, median, p25, p75, p99
+def aggregate_llc_data(dfs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """
+    Aggregate LLC data across all cores.
+    
+    Args:
+        dfs: Dict of DataFrames containing performance data for each core
+        
+    Returns:
+        DataFrame containing aggregated LLC data
+    """
+    # Create a copy of the first DataFrame for the aggregated data
+    agg_df = pd.DataFrame()
+    
+    # Sum LLC loads and misses across all cores
+    agg_df['LLC-loads'] = sum(df['LLC-loads'] for df in dfs.values())
+    agg_df['LLC-misses'] = sum(df['LLC-misses'] for df in dfs.values())
+    
+    # Recalculate LLC miss rate
+    agg_df['LLC-miss-rate'] = agg_df['LLC-misses'] / agg_df['LLC-loads']
+    
+    return agg_df
 
-def plot_data(
-    axes: plt.Axes,
-    data: pd.DataFrame,
-    median: float,
-    p25: float,
-    p75: float,
-    p99: float,
-    label: str,
-    color: str,
-    position: int,
-    title: str
-) -> None:
-    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=16)  
-    axes[position].axhline(median, color=color, linestyle="--", label=f"{title} Median", alpha=0.7)
-    axes[position].axhline(p25, color=color, linestyle=":", label=f"{title} 25th", alpha=0.5)
-    axes[position].axhline(p75, color=color, linestyle=":", label=f"{title} 75th", alpha=0.5)
-    axes[position].axhline(p99, color=color, linestyle=":", label=f"{title} 99th", alpha=0.5)
+def plot_llc_data(agg_df: pd.DataFrame, output_file: str, test_name: str, container_name: str, config: str) -> bool:
+    """
+    Plot aggregated LLC data with percentile lines.
+    
+    Args:
+        agg_df: DataFrame containing aggregated LLC data
+        output_file: Path to save the plot
+        test_name: Name of the test
+        container_name: Name of the container
+        config: Test configuration
+        
+    Returns:
+        bool: True if plotting was successful, False otherwise
+    """
+    try:
+        # Calculate percentiles
+        loads_p25, loads_p75, loads_p99 = calculate_percentiles(agg_df, 'LLC-loads')
+        misses_p25, misses_p75, misses_p99 = calculate_percentiles(agg_df, 'LLC-misses')
+        miss_rate_p25, miss_rate_p75, miss_rate_p99 = calculate_percentiles(agg_df, 'LLC-miss-rate')
+        
+        # Create figure with subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+        fig.suptitle(f'LLC Performance Analysis\n{test_name} - {container_name} - {config}')
+        
+        # Plot LLC loads and misses with percentiles
+        ax1.plot(agg_df['Time'], agg_df['LLC-loads'], label='LLC Loads', color='blue')
+        ax1.axhline(loads_p25, color='blue', linestyle=':', alpha=0.5, label='Loads 25th')
+        ax1.axhline(loads_p75, color='blue', linestyle=':', alpha=0.5, label='Loads 75th')
+        ax1.axhline(loads_p99, color='blue', linestyle=':', alpha=0.5, label='Loads 99th')
+        
+        ax1.plot(agg_df['Time'], agg_df['LLC-misses'], label='LLC Misses', color='red')
+        ax1.axhline(misses_p25, color='red', linestyle=':', alpha=0.5, label='Misses 25th')
+        ax1.axhline(misses_p75, color='red', linestyle=':', alpha=0.5, label='Misses 75th')
+        ax1.axhline(misses_p99, color='red', linestyle=':', alpha=0.5, label='Misses 99th')
+        
+        ax1.set_xlabel('Time (μs)')
+        ax1.set_ylabel('Count')
+        ax1.set_title('Total LLC Loads and Misses')
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax1.grid(True)
+        
+        # Plot LLC miss rate with percentiles
+        ax2.plot(agg_df['Time'], agg_df['LLC-miss-rate'], label='LLC Miss Rate', color='green')
+        ax2.axhline(miss_rate_p25, color='green', linestyle=':', alpha=0.5, label='Miss Rate 25th')
+        ax2.axhline(miss_rate_p75, color='green', linestyle=':', alpha=0.5, label='Miss Rate 75th')
+        ax2.axhline(miss_rate_p99, color='green', linestyle=':', alpha=0.5, label='Miss Rate 99th')
+        
+        ax2.set_xlabel('Time (μs)')
+        ax2.set_ylabel('Rate')
+        ax2.set_title('Overall LLC Miss Rate')
+        ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax2.grid(True)
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(output_file, bbox_inches='tight')
+        plt.close()
+        return True
+    except Exception as e:
+        print(f"Error creating LLC plot: {str(e)}")
+        return False
 
-def add_text_box(
-    axes: plt.Axes, 
-    idx: int, 
-    median: float, 
-    p25: float, 
-    p75: float, 
-    p99: float, 
-    label: str, 
-    color: str, 
-    y_offset: float = 0
-) -> None:
-    text: str = f'{label}\nMedian: {median:.2f}\n25th: {p25:.2f}\n75th: {p75:.2f}\n99th: {p99:.2f}'
-    bbox_props: dict = {
-        "boxstyle": "round,pad=0.5",
-        "facecolor": "white",
-        "alpha": 0.8,
-        "edgecolor": color,
-        "linewidth": 2
-    }
-    axes[idx].annotate(
-        text,
-        xy=(1.02, 0.95 - y_offset),
-        xycoords='axes fraction',
-        fontsize=10,
-        verticalalignment='top',
-        horizontalalignment='left',
-        bbox=bbox_props
-    )
+def plot_core_instructions(dfs: Dict[pd.DataFrame], output_file: str, test_name: str, container_name: str, config: str) -> bool:
+    """
+    Plot instructions per core with percentile lines.
+    
+    Args:
+        dfs: Dict of DataFrames containing performance data for each core
+        output_file: Path to save the plot
+        test_name: Name of the test
+        container_name: Name of the container
+        config: Test configuration
+        
+    Returns:
+        bool: True if plotting was successful, False otherwise
+    """
+    try:
+        plt.figure(figsize=(12, 6))
+        plt.title(f'Instructions per Core\n{test_name} - {container_name} - {config}')
+        
+        # Plot instructions for each core with percentiles
+        i: int = 0
+        for core_no, df in dfs.items():
+            color = plt.cm.viridis(i / len(dfs))  # Use different colors for each core
+            p25, p75, p99 = calculate_percentiles(df, 'Instructions')
+            
+            plt.plot(df['Time'], df['Instructions'], label=f'Core {core_no}', color=color, alpha=0.7)
+            plt.axhline(p25, color=color, linestyle=':', alpha=0.5, label=f'Core {core_no} 25th')
+            plt.axhline(p75, color=color, linestyle=':', alpha=0.5, label=f'Core {core_no} 75th')
+            plt.axhline(p99, color=color, linestyle=':', alpha=0.5, label=f'Core {core_no} 99th')
+        
+            i += 1
+        
+        plt.xlabel('Time (μs)')
+        plt.ylabel('Instructions')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True)
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(output_file, bbox_inches='tight')
+        plt.close()
+        return True
+    except Exception as e:
+        print(f"Error creating instructions plot: {str(e)}")
+        return False
 
-def save_plot(fig: plt.Figure, output_file_path: str) -> None:
-    fig.tight_layout()
-    plt.savefig(output_file_path, bbox_inches='tight', dpi=300)
-    print(f"Plot saved as {output_file_path}")
+def process_files(input_dir: str, plot_dir: str, test_name: str, container_name: str, config: str) -> bool:
+    """
+    Process all input files and create corresponding plots.
+    
+    Args:
+        input_dir: Directory containing input CSV files
+        plot_dir: Directory to store the plots
+        test_name: Name of the test
+        container_name: Name of the container
+        config: Test configuration
+        
+    Returns:
+        bool: True if processing was successful, False otherwise
+    """
+    try:
+        # Read all CSV files
+        dfs = {}
+        for input_file in os.listdir(input_dir):
+            if input_file.endswith('.csv'):
+                input_splits = input_file.split('_')
+                core_no = input_splits[len(input_splits) - 1]
+                input_path = os.path.join(input_dir, input_file)
+                df = pd.read_csv(input_path)
+                dfs[core_no] = df
+        
+        if not dfs:
+            print(f"No CSV files found in {input_dir}")
+            return False
+        
+        # Create aggregated LLC plot
+        agg_df = aggregate_llc_data(dfs)
+        llc_plot_file = os.path.join(plot_dir, f"{test_name}_{container_name}_{config}_llc_performance.png")
+        if not plot_llc_data(agg_df, llc_plot_file, test_name, container_name, config):
+            return False
+        
+        # Create per-core instructions plot
+        instructions_plot_file = os.path.join(plot_dir, f"{test_name}_{container_name}_{config}_core_instructions.png")
+        if not plot_core_instructions(dfs, instructions_plot_file, test_name, container_name, config):
+            return False
+        
+        return True
+    except Exception as e:
+        print(f"Error processing files: {str(e)}")
+        return False
 
-def main() -> None:
-    args: argparse.Namespace = parse_arguments()
+def main():
+    parser = argparse.ArgumentParser(description='Plot profiling data from CSV files')
+    parser.add_argument('--test-name', type=str, required=True, help='Name of the test')
+    parser.add_argument('--container-name', type=str, required=True, help='Name of the container')
+    parser.add_argument('--config', type=str, required=True, help='Test configuration')
+    parser.add_argument('--data-dir', type=str, required=True, help='Directory containing CSV files')
+    parser.add_argument('--plot-dir', type=str, required=True, help='Directory to save plots')
+    args = parser.parse_args()
 
     test_name: str = args.test_name.replace(" ", "_")
     container_name: str = args.container_name
-    configs: str = args.config.replace(" ", "_")
+    config: str = args.config.replace(" ", "_")
     data_dir: str = args.data_dir
     plot_dir: str = args.plot_dir
-    output_file_path: str = f"{plot_dir}/{test_name}_{container_name}_{configs}.png"
 
-    print("Plotting LLC Load, Miss, and Instruction Frequencies over Time")
-    print(f"Test Name: {test_name}")
-    print(f"Container Name: {container_name}")
-    print(f"Config: {configs}")
-    print(f"Data Directory: {data_dir}")
-    print(f"Output File Path: {output_file_path}")
+    if process_files(data_dir, plot_dir, test_name, container_name, config):
+        print(f"\nSuccessfully created plots in {plot_dir}:")
+        print(f"- {test_name}_{container_name}_{config}_llc_performance.png (Aggregated LLC data across all cores)")
+        print(f"- {test_name}_{container_name}_{config}_core_instructions.png (Instructions per core)")
+    else:
+        print("\nFailed to create plots")
 
-    perf_df: pd.DataFrame = load_data(data_dir)
-    
-    loads, loads_median, loads_25th, loads_75th, loads_99th = calculate_percentiles(perf_df, "LLC-loads")
-    misses, misses_median, misses_25th, misses_75th, misses_99th = calculate_percentiles(perf_df, "LLC-misses")
-    instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th = calculate_percentiles(perf_df, "Instructions")
-
-    loads["LLC-loads"] = loads["LLC-loads"].astype(int)
-    misses["LLC-misses"] = misses["LLC-misses"].astype(int)
-    instructions["Instructions"] = instructions["Instructions"].astype(int)
-    loads["Time"] = loads["Time"].astype(int)
-    misses["Time"] = misses["Time"].astype(int)
-    instructions["Time"] = instructions["Time"].astype(int)
-    loads["Time"] = loads["Time"] - loads["Time"].min()
-    misses["Time"] = misses["Time"] - misses["Time"].min()
-    instructions["Time"] = instructions["Time"] - instructions["Time"].min()
-    loads["LLC-loads"] = loads["LLC-loads"].replace(0, np.nan)
-    misses["LLC-misses"] = misses["LLC-misses"].replace(0, np.nan)
-    instructions["Instructions"] = instructions["Instructions"].replace(0, np.nan)
-    loads = loads.dropna()
-    misses = misses.dropna()
-    instructions = instructions.dropna()
-    loads = loads.sort_values(by="Time")
-    misses = misses.sort_values(by="Time")
-    instructions = instructions.sort_values(by="Time")
-
-    plt.style.use('ggplot')
-    
-    fig, axes = plt.subplots(2, 1, figsize=(12, 12))
-
-    plot_data(axes, loads, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0, "Loads")
-    plot_data(axes, misses, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0, "Misses")
-    plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 1, "Instr")
-
-    add_text_box(axes, 0, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0)
-    add_text_box(axes, 0, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0.25)
-    add_text_box(axes, 1, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 0)
-
-    fig.suptitle(f"TEST: {test_name} | SERVICE: {container_name} | CONFIGS: {configs}", fontsize=14, fontweight='bold', y=0.98)
-    save_plot(fig, output_file_path)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

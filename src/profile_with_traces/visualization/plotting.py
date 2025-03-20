@@ -7,12 +7,13 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List
 import math
+import os
 
-from .trace_processor import get_non_overlapping_longest_durations
+from ..data_processing.trace_processor import get_non_overlapping_longest_durations
 
 def plot_aligned_median_resource_usage(
     traces_df: pd.DataFrame, 
-    profile_df: pd.DataFrame, 
+    core_to_perf_data_df: Dict[str, pd.DataFrame],
     output_dir: str, 
     config: str, 
     container_name: str, 
@@ -55,27 +56,75 @@ def plot_aligned_median_resource_usage(
         trace_end: int = trace_info['end_time']
         trace_duration: int = trace_info['duration']
         
-        trace_perf_data: pd.DataFrame = profile_df[
-            (profile_df['Time'] >= trace_start) & 
-            (profile_df['Time'] <= trace_end)
-        ]
+        # Get all timestamps from all cores within the trace window
+        all_timestamps = set()
+        for core_df in core_to_perf_data_df.values():
+            core_df = core_df[
+                (core_df['Time'] >= trace_start) & 
+                (core_df['Time'] <= trace_end)
+            ]
+            all_timestamps.update(core_df['Time'].unique())
         
-        if trace_perf_data.empty:
-            continue
+        all_timestamps = sorted(list(all_timestamps))
+        
+        # For each timestamp, sum up LLC loads and misses across all cores
+        for timestamp in all_timestamps:
+            total_llc_loads = 0
+            total_llc_misses = 0
             
-        for _, row in trace_perf_data.iterrows():
-            absolute_time: float = row['Time']
-            relative_position: float = (absolute_time - trace_start) / trace_duration
+            for core_df in core_to_perf_data_df.values():
+                core_df = core_df[
+                    (core_df['Time'] >= trace_start) & 
+                    (core_df['Time'] <= trace_end)
+                ]
+                if not core_df.empty:
+                    timestamp_data = core_df[core_df['Time'] == timestamp]
+                    if not timestamp_data.empty:
+                        total_llc_loads += timestamp_data['LLC-loads'].iloc[0]
+                        total_llc_misses += timestamp_data['LLC-misses'].iloc[0]
+        
+            # Get instructions for the core with highest instructions for this trace
+            core_with_highest_instructions = None
+            max_instructions = 0
             
+            for core_id, core_df in core_to_perf_data_df.items():
+                core_df = core_df[
+                    (core_df['Time'] >= trace_start) & 
+                    (core_df['Time'] <= trace_end)
+                ]
+                if not core_df.empty:
+                    total_instructions = core_df['Instructions'].sum()
+                    if total_instructions > max_instructions:
+                        max_instructions = total_instructions
+                        core_with_highest_instructions = core_id
+            
+            if core_with_highest_instructions is None:
+                continue
+                
+            instructions_df = core_to_perf_data_df[core_with_highest_instructions]
+            instructions_df = instructions_df[
+                (instructions_df['Time'] >= trace_start) & 
+                (instructions_df['Time'] <= trace_end)
+            ]
+            
+            if instructions_df.empty:
+                continue
+                
+            # Get instructions for this timestamp
+            timestamp_instructions = instructions_df[instructions_df['Time'] == timestamp]['Instructions'].iloc[0] if not instructions_df[instructions_df['Time'] == timestamp].empty else 0
+            
+            # Normalize the data
+            relative_position = (timestamp - trace_start) / trace_duration
             relative_position = max(0, min(1, relative_position))
             
             normalized_perf_data.append({
                 'trace_id': trace_id,
-                'absolute_time': absolute_time,
+                'absolute_time': timestamp,
                 'relative_position': relative_position,
-                'LLC-loads': row['LLC-loads'],
-                'LLC-misses': row['LLC-misses'],
-                'Instructions': row['Instructions']
+                'LLC-loads': total_llc_loads,
+                'LLC-misses': total_llc_misses,
+                'Instructions': timestamp_instructions,
+                'core_id': core_with_highest_instructions
             })
     
     if not normalized_perf_data:
@@ -91,25 +140,31 @@ def plot_aligned_median_resource_usage(
     
     binned_llc_loads: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
     binned_llc_misses: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
-    binned_instructions: List[List[float]] = [[] for _ in range(num_bins_in_microseconds)]
+    binned_instructions: Dict[str, List[List[float]]] = {core_id: [[] for _ in range(num_bins_in_microseconds)] for core_id in core_to_perf_data_df.keys()}
     
     for _, row in norm_df.iterrows():
         bin_idx: int = min(int(row['relative_position'] * num_bins_in_microseconds), num_bins_in_microseconds - 1)
         binned_llc_loads[bin_idx].append(row['LLC-loads'])
         binned_llc_misses[bin_idx].append(row['LLC-misses'])
-        binned_instructions[bin_idx].append(row['Instructions'])
+        binned_instructions[row['core_id']][bin_idx].append(row['Instructions'])
     
     median_llc_loads: List[float] = []
     median_llc_misses: List[float] = []
-    median_instructions: List[float] = []
+    median_instructions: Dict[str, List[float]] = {core_id: [] for core_id in core_to_perf_data_df.keys()}
     valid_bin_centers: List[float] = []
     
     for i in range(num_bins_in_microseconds):
-        if binned_llc_loads[i] and binned_llc_misses[i] and binned_instructions[i]:
+        if binned_llc_loads[i] and binned_llc_misses[i]:
             median_llc_loads.append(np.median([x for x in binned_llc_loads[i] if x > 0]))
             median_llc_misses.append(np.median([x for x in binned_llc_misses[i] if x > 0]))
-            median_instructions.append(np.median([x for x in binned_instructions[i] if x > 0]))
             valid_bin_centers.append(bin_centers[i])
+            
+            # Calculate median instructions for each core
+            for core_id in core_to_perf_data_df.keys():
+                if binned_instructions[core_id][i]:
+                    median_instructions[core_id].append(np.median([x for x in binned_instructions[core_id][i] if x > 0]))
+                else:
+                    median_instructions[core_id].append(0)
     
     time_points: np.ndarray = np.array(valid_bin_centers) * median_duration
     
@@ -125,22 +180,25 @@ def plot_aligned_median_resource_usage(
     # Plot LLC Loads and LLC Misses together
     axs[0].scatter(time_points, median_llc_loads, s=10, alpha=0.7, color="blue", label="LLC Loads")
     axs[0].scatter(time_points, median_llc_misses, s=10, alpha=0.7, color="red", label="LLC Misses")
-    axs[0].set_title("Median LLC Loads and LLC Misses")
+    axs[0].set_title("Median LLC Loads and LLC Misses (Summed Across Cores)")
     axs[0].set_ylabel("Count")
     axs[0].set_xlim(0, median_duration)
     axs[0].legend()
     
-    # Plot Instructions
-    axs[1].scatter(time_points, median_instructions, s=10, alpha=0.7, color="green", label="Instructions")
-    axs[1].set_title("Median Instructions")
+    # Plot Instructions for each core
+    colors = plt.cm.Set3(np.linspace(0, 1, len(core_to_perf_data_df)))
+    for (core_id, instructions), color in zip(median_instructions.items(), colors):
+        axs[1].scatter(time_points, instructions, s=10, alpha=0.7, color=color, label=f"Core {core_id}")
+    
+    axs[1].set_title("Median Instructions per Core")
     axs[1].set_xlabel("Relative Time (μs)")
     axs[1].set_ylabel("Count")
     axs[1].set_xlim(0, median_duration)
-    axs[1].legend()
+    axs[1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
     plot_path: str = f"{output_dir}/aligned_median_resource_usage_plot_{config}.png"
-    plt.savefig(plot_path)
+    plt.savefig(plot_path, bbox_inches='tight')
     plt.close()
     
     print(f"Aligned median resource usage plot saved to {plot_path}")
@@ -149,69 +207,61 @@ def plot_aligned_median_resource_usage(
 
 def plot_traces_start_end_times_and_perf_data(
     traces_df: pd.DataFrame,
-    profile_df: pd.DataFrame,
+    core_to_perf_data_df: Dict[str, pd.DataFrame],
     output_dir: str
 ) -> None:
     """Plot trace start/end times and performance data."""
-    delta = 0.0001
-    threshold = 0.001
-
     # Get non-overlapping spans with largest durations for each trace
     non_overlapping_traces_df = get_non_overlapping_longest_durations(traces_df)
 
-    plt.figure(figsize=(15, 5))
-    plt.scatter(profile_df["Time"], profile_df["Instructions"], s=10, alpha=0.7, label="Instructions")
+    # Create a figure with subplots for each core
+    num_cores = len(core_to_perf_data_df)
+    fig, axs = plt.subplots(num_cores, 1, figsize=(15, 4*num_cores))
+    fig.suptitle("Instructions per Core with Trace Start/End Times", fontsize=14, fontweight='bold')
 
-    min_perf_time = profile_df['Time'].min()
-    max_perf_time = profile_df['Time'].max()
-    
-    if not non_overlapping_traces_df.empty:
-        min_trace_time = non_overlapping_traces_df['start_time'].min()
-        max_trace_time = non_overlapping_traces_df['end_time'].max()
-        if min_trace_time < min_perf_time:
-            min_perf_time = min_trace_time
-        if max_trace_time > max_perf_time:
-            max_perf_time = max_trace_time
+    # If there's only one core, axs will be a single Axes object, not an array
+    if num_cores == 1:
+        axs = [axs]
 
-    plt.xlim(min_perf_time, max_perf_time)
-    
-    # Use a set to avoid duplicate labels in the legend
-    start_label_used = False
-    end_label_used = False
-    
-    for _, trace in non_overlapping_traces_df.iterrows():
-        start_time = trace["start_time"]
-        end_time = trace["end_time"]
-
-        if abs(end_time - start_time) < threshold:
-            end_time += delta  
-
-        start_label = "Trace Start" if not start_label_used else ""
-        end_label = "Trace End" if not end_label_used else ""
+    # Plot instructions for each core
+    for i, (core_id, perf_df) in enumerate(core_to_perf_data_df.items()):
+        ax = axs[i]
         
-        plt.axvline(start_time, color='red', linestyle='--', label=start_label)
-        plt.axvline(end_time, color='blue', linestyle=':', label=end_label)
+        # Plot instructions for this core
+        ax.plot(perf_df['Time'], perf_df['Instructions'], label=f'Core {core_id} Instructions', color='blue', alpha=0.7)
         
-        start_label_used = True
-        end_label_used = True
+        # Plot trace start/end times as vertical lines
+        for _, trace in non_overlapping_traces_df.iterrows():
+            trace_start = trace['start_time']
+            trace_end = trace['end_time']
+            trace_id = trace['trace_id']
+            
+            # Add vertical lines for trace start and end
+            ax.axvline(x=trace_start, color='red', linestyle='--', alpha=0.5)
+            ax.axvline(x=trace_end, color='red', linestyle='--', alpha=0.5)
+            
+            # Add a shaded region for the trace duration
+            ax.axvspan(trace_start, trace_end, alpha=0.1, color='red', label=f'Trace {trace_id}')
+        
+        ax.set_title(f'Core {core_id} Instructions')
+        ax.set_xlabel('Time (μs)')
+        ax.set_ylabel('Instructions')
+        ax.grid(True)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
     
-    plt.title("Trace Start (red --) / End (blue :) Times and Instructions (green)")
-    plt.xlabel("Time (microseconds)")
-    plt.ylabel("Count")
-    
-    # Remove duplicate labels
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys())
-    
-    plt.savefig(f"{output_dir}/traces_instructions_plot.png")
+    # Save the plot
+    plot_path = os.path.join(output_dir, 'traces_instructions_plot.png')
+    plt.savefig(plot_path, bbox_inches='tight')
     plt.close()
 
-    print(f"Plot saved to {output_dir}/traces_instructions_plot.png")
+    print(f"Plot saved to {plot_path}")
 
 def plot_profile_with_traces(
     trace_stats_df: pd.DataFrame,
-    profile_df: pd.DataFrame,
+    core_to_perf_data_df: Dict[str, pd.DataFrame],
     output_dir: str,
     num_samples: int,
     config: str,
@@ -219,7 +269,6 @@ def plot_profile_with_traces(
     service_name_for_traces: str
 ) -> None:
     """Plot performance profiles with trace data."""
-    profile_df["Time"] = profile_df["Time"].astype(float)
     num_plots = 0
 
     print(f"Plotting top {min(num_samples, len(trace_stats_df))} traces by resource usage")
@@ -235,6 +284,10 @@ def plot_profile_with_traces(
         non_zero_llc_misses = trace["non_zero_llc_misses"]
         non_zero_instructions = trace["non_zero_instructions"]
         total_resource_usage = trace["total_resource_usage"]
+        core_with_highest_instructions = trace["core_with_highest_instructions"]
+
+        profile_df = core_to_perf_data_df[core_with_highest_instructions]
+        profile_df["Time"] = profile_df["Time"].astype(int)
 
         plot_profile_df = profile_df[
             (profile_df["Time"] >= trace_start) & 
@@ -252,10 +305,28 @@ def plot_profile_with_traces(
         ]
         zoomed_plot_profile_df = zoomed_plot_profile_df.sort_values(by="Time")
 
-        zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].astype(int)
-        zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].astype(int)
+        # Sum up LLC loads and misses across all cores for the trace time window
+        total_llc_loads = pd.Series(0, index=zoomed_plot_profile_df.index)
+        total_llc_misses = pd.Series(0, index=zoomed_plot_profile_df.index)
+        
+        for core_id, core_df in core_to_perf_data_df.items():
+            core_df = core_df[
+                (core_df["Time"] >= trace_start - zoom_margin) &
+                (core_df["Time"] <= trace_end + zoom_margin)
+            ]
+            core_df = core_df.sort_values(by="Time")
+            
+            # Align the data by time
+            core_df = core_df.set_index("Time")
+            total_llc_loads += core_df["LLC-loads"].reindex(zoomed_plot_profile_df["Time"]).fillna(0)
+            total_llc_misses += core_df["LLC-misses"].reindex(zoomed_plot_profile_df["Time"]).fillna(0)
+
+        # Set the summed values back to the DataFrame
+        zoomed_plot_profile_df["LLC-loads"] = total_llc_loads.values
+        zoomed_plot_profile_df["LLC-misses"] = total_llc_misses.values
         zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].astype(int)
 
+        # Replace zeros with NaN for better visualization
         zoomed_plot_profile_df["LLC-loads"] = zoomed_plot_profile_df["LLC-loads"].replace(0, np.nan)
         zoomed_plot_profile_df["LLC-misses"] = zoomed_plot_profile_df["LLC-misses"].replace(0, np.nan)
         zoomed_plot_profile_df["Instructions"] = zoomed_plot_profile_df["Instructions"].replace(0, np.nan)

@@ -4,7 +4,7 @@ Functions for loading trace and performance data.
 
 import os
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, List
 from .constants import DEFAULT_SERVICE_NAME
 
 def load_traces_data(
@@ -25,8 +25,11 @@ def load_traces_data(
     container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
     return container_jaeger_traces_df
 
-def load_perf_data(data_dir: str) -> pd.DataFrame:
+def load_perf_data(data_dir: str) -> Dict[str, pd.DataFrame]:
     """Load performance data from CSV file."""
-    llc_data_file: str = f"{data_dir}/data/profile_data.csv"
-    df: pd.DataFrame = pd.read_csv(llc_data_file, sep=",")
-    return df 
+    perf_data_files: List[str] = [f for f in os.listdir(data_dir) if f.startswith("profile_data")]
+    perf_data_dfs: Dict[str, pd.DataFrame] = {}
+    for file in perf_data_files:
+        df: pd.DataFrame = pd.read_csv(os.path.join(data_dir, file))
+        perf_data_dfs[file] = df
+    return perf_data_dfs

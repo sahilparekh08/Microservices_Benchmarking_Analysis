@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # TODO: 
-# change num cores
 # runtime for 100, 1000 requests on same amount of cores
 # more csv data for time vs instructions / llc data for every req like in the median processing
 # check on the workload gen params
@@ -57,6 +56,12 @@ make_dirs() {
 
     echo "mkdir -p $DATA_DIR/workload/$curr_time/data"
     mkdir -p $DATA_DIR/workload/$curr_time/data
+
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/data/traces"
+    mkdir -p $DATA_DIR/workload/$curr_time/data/traces
+
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data"
+    mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data
 
     echo "mkdir -p $DATA_DIR/workload/$curr_time/plots"
     mkdir -p $DATA_DIR/workload/$curr_time/plots
@@ -203,17 +208,9 @@ echo "Running execute_workload_on_local.sh in background with logs saved at $RUN
 $SCRIPTS_DIR/execute_workload_on_local.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --test-name "$TEST_NAME" --config "$CONFIG" > "$RUN_WORKLOAD_ON_LOCAL_LOG_PATH" 2>&1 &
 echo -e "--------------------------------------------------\n"
 
-# echo "--------------------------------------------------"
-# echo "Running collect_perf_data.sh"
-# $SCRIPTS_DIR/collect_perf_data.sh --container-name "$CONTAINER_NAME" --config "$CONFIG" --data-dir "$DATA_DIR" || {
-#     echo "Failed to collect perf data"
-#     exit 1
-# }
-# echo -e "--------------------------------------------------\n"
-
 echo "--------------------------------------------------"
 echo "Running profile_core.sh"
-$SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-core "$TARGET_CORE" --config "$CONFIG" --data-dir "$DATA_DIR" || {
+$SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-cores "$TARGET_CORE" --config "$CONFIG" --data-dir "$DATA_DIR" || {
     echo "Failed to profile core"
     exit 1
 }
@@ -227,17 +224,23 @@ echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \"
 
 echo -e "\n--------------------------------------------------"
 echo "Running collect_analyse_jaeger_traces.sh"
+
+CMD="$SCRIPTS_DIR/collect_analyse_jaeger_traces.sh"
+CMD="$CMD --test-name $TEST_NAME"
+CMD="$CMD --config $CONFIG"
+CMD="$CMD --service-name-for-traces $SERVICE_NAME_FOR_TRACES"
+CMD="$CMD --limit $JAEGER_TRACES_LIMIT"
+CMD="$CMD --data-dir $DATA_DIR"
+
 if $SAVE_TRACES_JSON; then
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" --save-traces-json || {
-        echo "Failed to collect and analyse Jaeger traces"
-        exit 1
-    }
-else 
-    $SCRIPTS_DIR/collect_analyse_jaeger_traces.sh --test-name "$TEST_NAME" --config "$CONFIG" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --limit $JAEGER_TRACES_LIMIT --data-dir "$DATA_DIR" || {
-        echo "Failed to collect and analyse Jaeger traces"
-        exit 1
-    }
+    CMD="$CMD --save-traces-json"
 fi
+
+echo "Running command: $CMD"
+$CMD || {
+    echo "Failed to collect and analyse Jaeger traces"
+    exit 1
+}
 echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
