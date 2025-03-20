@@ -94,14 +94,8 @@ sudo gcc -O0 -g -Wall $PROFILE_SRC_DIR/src/profile_core.c -o $PROFILE_SRC_DIR/sr
     exit 1
 }
 
-echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data"
-sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data || {
-    echo "Failed to compile decode_profiled_data.c"
-    exit 1
-}
-
 echo -e "\nStarting profiler at $(date)"
-CMD="sudo $PROFILE_SRC_DIR/src/profile_core --core-to-pin $CORE_TO_PIN --target-cores $TARGET_CORES --duration $DURATION --output-dir $PROFILE_DATA_DIR"
+CMD="sudo $PROFILE_SRC_DIR/src/profile_core --core-to-pin $CORE_TO_PIN --target-cores $TARGET_CORES --duration $DURATION --data-dir $PROFILE_DATA_DIR"
 if [[ ! -z "$MAX_SAMPLES" ]]; then
     CMD="$CMD --max-samples $MAX_SAMPLES"
 fi
@@ -113,8 +107,15 @@ $CMD > $LOG_DIR/profile_core.log 2>&1 || {
 }
 echo -e "Finished at $(date)\n"
 
-echo "sudo $PROFILE_SRC_DIR/src/decode_profiled_data --input-dir $PROFILE_DATA_DIR --output-dir $PROFILE_DATA_DIR > $LOG_DIR/decode_profiled_data.log 2>&1"
-sudo $PROFILE_SRC_DIR/src/decode_profiled_data --input-dir $PROFILE_DATA_DIR --output-dir $PROFILE_DATA_DIR > $LOG_DIR/decode_profiled_data.log 2>&1 || {
+echo "sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data"
+sudo gcc -O3 -Wall $PROFILE_SRC_DIR/src/decode_profiled_data.c -o $PROFILE_SRC_DIR/src/decode_profiled_data || {
+    echo "Failed to compile decode_profiled_data.c"
+    exit 1
+}
+
+CMD="sudo $PROFILE_SRC_DIR/src/decode_profiled_data --data-dir $PROFILE_DATA_DIR"
+echo "$CMD > $LOG_DIR/decode_profiled_data.log 2>&1"
+$CMD > $LOG_DIR/decode_profiled_data.log 2>&1 || {
     echo "Failed to run decode_profiled_data"
     cleanup
     exit 1

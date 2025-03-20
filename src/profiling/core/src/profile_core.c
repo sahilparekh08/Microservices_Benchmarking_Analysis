@@ -14,22 +14,8 @@
 #include <signal.h>
 #include <errno.h>
 #include <limits.h>
-#include "profile_core.h"
-#include "msr_constants.h"
-
-// Linux-specific memory mapping flags
-#ifndef MAP_POPULATE
-#define MAP_POPULATE 0x1000
-#endif
-#ifndef MADV_SEQUENTIAL
-#define MADV_SEQUENTIAL 2
-#endif
-
-// Linux-specific CPU set type
-#ifndef CPU_SET_T_DEFINED
-typedef unsigned long cpu_set_t;
-#define CPU_SET_T_DEFINED
-#endif
+#include "../include/profile_core.h"
+#include "../include/msr_constants.h"
 
 // MSR definitions for Haswell/Broadwell (E5 v3) architecture
 #define IA32_PERF_GLOBAL_CTRL 0x38F
@@ -49,14 +35,18 @@ typedef unsigned long cpu_set_t;
 #define INSTR_RETIRED_UMASK   0x00
 
 // Buffer size settings
-#define BUFFER_SIZE 50000000 // Allow up to 50 million samples in memory
+#define BUFFER_SIZE 5000000
 
 // Global variables
-static sample_t *mapped_file;
-static uint64_t total_samples = 0;
-static size_t file_size;
-static int output_file_fd = -1;
 static volatile int should_exit = 0;
+
+// Add new structure for per-core counters
+typedef struct {
+    uint64_t prev_llc_loads;
+    uint64_t prev_llc_misses;
+    uint64_t prev_instr_retired;
+    int msr_fd;
+} core_counters_t;
 
 // MSR access helper functions - optimized inline versions
 static inline int open_msr(int core) {
@@ -65,18 +55,24 @@ static inline int open_msr(int core) {
     return open(msr_path, O_RDWR);
 }
 
-static inline uint64_t read_msr(int fd, uint32_t reg) {
+static inline uint64_t read_msr(int* fd, uint32_t reg) {
     uint64_t value;
-    pread(fd, &value, sizeof(value), reg);
+    if (pread(*fd, &value, sizeof(value), reg) != sizeof(value)) {
+        fprintf(stderr, "Error reading MSR 0x%x: %s\n", reg, strerror(errno));
+        return 0;
+    }
+    // if(value != 0) printf("Value: %lu\n", value);
     return value;
 }
 
-static inline void write_msr(int fd, uint32_t reg, uint64_t value) {
-    pwrite(fd, &value, sizeof(value), reg);
+static inline void write_msr(int* fd, uint32_t reg, uint64_t value) {
+    if (pwrite(*fd, &value, sizeof(value), reg) != sizeof(value)) {
+        fprintf(stderr, "Error writing MSR 0x%x: %s\n", reg, strerror(errno));
+    }
 }
 
 // Setup PMU counters
-int setup_pmu(int msr_fd) {
+int setup_pmu(int* msr_fd) {
     // Disable all counters first
     write_msr(msr_fd, IA32_PERF_GLOBAL_CTRL, 0);
     
@@ -172,14 +168,6 @@ void signal_handler(int signum) {
     should_exit = 1;
 }
 
-// Add new structure for per-core counters
-typedef struct {
-    uint64_t prev_llc_loads;
-    uint64_t prev_llc_misses;
-    uint64_t prev_instr_retired;
-    int msr_fd;
-} core_counters_t;
-
 // Function to parse comma-separated list of cores
 int parse_target_cores(const char* cores_str, int** target_cores, int* num_cores) {
     char* str = strdup(cores_str);
@@ -203,10 +191,10 @@ int parse_target_cores(const char* cores_str, int** target_cores, int* num_cores
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 11) {  // 5 arguments * 2 (flag + value) + 1 (program name)
-        printf("Usage: %s --core-to-pin <core> --target-coress <cores> --duration <seconds> --data-dir <dir> --max-samples <count>\n", argv[0]);
+    if (argc < 9 || argc > 11) {
+        printf("Usage: %s --core-to-pin <core> --target-cores <cores> --duration <seconds> --data-dir <dir> [--max-samples <count>]\n", argv[0]);
         printf("  --core-to-pin: core to pin the profiler to\n");
-        printf("  --target-coress: comma-separated list of cores to profile (e.g., \"0,1,2\")\n");
+        printf("  --target-cores: comma-separated list of cores to profile (e.g., \"0,1,2\")\n");
         printf("  --duration: duration in seconds to profile\n");
         printf("  --data-dir: directory to store per-core bin files\n");
         printf("  --max-samples: maximum number of samples to collect per core\n");
@@ -255,14 +243,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     
-    // Create output directory if it doesn't exist
-    if (mkdir(data_dir, 0755) == -1 && errno != EEXIST) {
-        perror("Error creating output directory");
-        free(target_cores);
-        return EXIT_FAILURE;
-    }
-    
-    printf("Ultra-High-Performance Profiler started. PID: %d\n", getpid());
+    printf("Profiler started. PID: %d\n", getpid());
     printf("Settings: pinned to core [%d], profiling %d cores [", core_to_pin, num_target_cores);
     for (int i = 0; i < num_target_cores; i++) {
         printf("%d%s", target_cores[i], i < num_target_cores - 1 ? "," : "");
@@ -290,7 +271,6 @@ int main(int argc, char *argv[]) {
         perror("Warning: mlockall failed");
     }
     
-    // Open MSR devices for all target cores
     core_counters_t* core_counters = malloc(num_target_cores * sizeof(core_counters_t));
     core_file_t* core_files = malloc(num_target_cores * sizeof(core_file_t));
     
@@ -324,15 +304,27 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
         
-        // Initialize previous counter values
-        core_counters[i].prev_llc_loads = read_msr(core_counters[i].msr_fd, IA32_PMC0);
-        core_counters[i].prev_llc_misses = read_msr(core_counters[i].msr_fd, IA32_PMC1);
-        core_counters[i].prev_instr_retired = read_msr(core_counters[i].msr_fd, IA32_PMC2);
+        // Initialize PMU counters for this core
+        setup_pmu(&(core_counters[i].msr_fd));
+        
+        // Initialize counter values to zero
+        core_counters[i].prev_llc_loads = 0;
+        core_counters[i].prev_llc_misses = 0;
+        core_counters[i].prev_instr_retired = 0;
     }
     
-    // Setup PMU counters for all cores
+    // Add a small delay to let counters stabilize
+    usleep(10000);  // 10ms delay
+    
+    // Reset initial counter values after stabilization
+    printf("Initial counter values:\n");
     for (int i = 0; i < num_target_cores; i++) {
-        setup_pmu(core_counters[i].msr_fd);
+        core_counters[i].prev_llc_loads = read_msr(&(core_counters[i].msr_fd), IA32_PMC0);
+        core_counters[i].prev_llc_misses = read_msr(&(core_counters[i].msr_fd), IA32_PMC1);
+        core_counters[i].prev_instr_retired = read_msr(&(core_counters[i].msr_fd), IA32_PMC2);
+
+        printf("Core %d: LLC_LOADS=%lu, LLC_MISSES=%lu, INSTR_RETIRED=%lu\n",
+               target_cores[i], core_counters[i].prev_llc_loads, core_counters[i].prev_llc_misses, core_counters[i].prev_instr_retired);
     }
     
     // Calculate end time
@@ -340,13 +332,12 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &ts_mono);
     uint64_t start_time = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
     uint64_t end_time = start_time + (duration_sec * 1000000000ULL);
-
-    #ifdef PRINT_STATS_EVERY_SECOND
-    uint64_t next_status_time = start_time + 1000000000ULL;
-    uint64_t last_samples = 0;
-    #endif
     
     printf("Collection started at %lu, will run for %d seconds\n", start_time, duration_sec);
+
+    uint64_t now_mono, now_real;
+    uint64_t curr_llc_loads, curr_llc_misses, curr_instr_retired;
+    uint64_t delta_llc_loads, delta_llc_misses, delta_instr_retired;
     
     // Main profiling loop - optimized for maximum speed
     while (!should_exit) {
@@ -354,8 +345,8 @@ int main(int argc, char *argv[]) {
         clock_gettime(CLOCK_MONOTONIC, &ts_mono);
         clock_gettime(CLOCK_REALTIME, &ts_real);
         
-        uint64_t now_mono = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
-        uint64_t now_real = (uint64_t)ts_real.tv_sec * 1000000000ULL + ts_real.tv_nsec;
+        now_mono = (uint64_t)ts_mono.tv_sec * 1000000000ULL + ts_mono.tv_nsec;
+        now_real = (uint64_t)ts_real.tv_sec * 1000000000ULL + ts_real.tv_nsec;
         
         if (now_mono >= end_time) {
             break;
@@ -365,22 +356,28 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < num_target_cores; i++) {
             if (core_files[i].total_samples >= max_samples_per_core) {
                 printf("Buffer full for core %d at %lu samples, stopping\n", target_cores[i], core_files[i].total_samples);
-                goto cleanup;
+                continue;
             }
             
-            uint64_t curr_llc_loads = read_msr(core_counters[i].msr_fd, IA32_PMC0);
-            uint64_t curr_llc_misses = read_msr(core_counters[i].msr_fd, IA32_PMC1);
-            uint64_t curr_instr_retired = read_msr(core_counters[i].msr_fd, IA32_PMC2);
-            
+            // Read each counter value with explicit memory barriers between reads
+            curr_llc_loads = read_msr(&(core_counters[i].msr_fd), IA32_PMC0);
+            curr_llc_misses = read_msr(&(core_counters[i].msr_fd), IA32_PMC1);
+            curr_instr_retired = read_msr(&(core_counters[i].msr_fd), IA32_PMC2);
+
             // Store both monotonic and real time
             core_files[i].mapped_file[core_files[i].total_samples].monotonic_time = now_mono;
             core_files[i].mapped_file[core_files[i].total_samples].real_time = now_real;
-            
+
+            // Calculate deltas
+            delta_llc_loads = curr_llc_loads - core_counters[i].prev_llc_loads;
+            delta_llc_misses = curr_llc_misses - core_counters[i].prev_llc_misses;
+            delta_instr_retired = curr_instr_retired - core_counters[i].prev_instr_retired;
+
             // Store counter deltas directly
-            core_files[i].mapped_file[core_files[i].total_samples].llc_loads = curr_llc_loads - core_counters[i].prev_llc_loads;
-            core_files[i].mapped_file[core_files[i].total_samples].llc_misses = curr_llc_misses - core_counters[i].prev_llc_misses;
-            core_files[i].mapped_file[core_files[i].total_samples].instr_retired = curr_instr_retired - core_counters[i].prev_instr_retired;
-            
+            core_files[i].mapped_file[core_files[i].total_samples].llc_loads = delta_llc_loads;
+            core_files[i].mapped_file[core_files[i].total_samples].llc_misses = delta_llc_misses;
+            core_files[i].mapped_file[core_files[i].total_samples].instr_retired = delta_instr_retired;
+
             // Store core ID
             core_files[i].mapped_file[core_files[i].total_samples].core_id = target_cores[i];
             
@@ -393,13 +390,12 @@ int main(int argc, char *argv[]) {
             core_files[i].total_samples++;
         }
         
-        // No sleep or pause - run at absolute maximum speed
+        // No sleep
     }
     
-cleanup:
     // Disable counters and close MSR devices for all cores
     for (int i = 0; i < num_target_cores; i++) {
-        write_msr(core_counters[i].msr_fd, IA32_PERF_GLOBAL_CTRL, 0);
+        write_msr(&(core_counters[i].msr_fd), IA32_PERF_GLOBAL_CTRL, 0);
         close(core_counters[i].msr_fd);
         close_output_file(&core_files[i]);
     }

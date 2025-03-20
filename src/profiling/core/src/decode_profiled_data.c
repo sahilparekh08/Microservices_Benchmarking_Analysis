@@ -13,11 +13,11 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <limits.h>
-#include "profile_core.h"
+#include "../include/profile_core.h"
 
 #define DEFAULT_CHUNK_SIZE 1000  // Default number of samples to process at once
 #define MAX_CHUNK_SIZE 1000000   // Maximum allowed chunk size
-#define MAX_FILENAME_LEN 256     // Maximum length for filenames
+#define MAX_FILENAME_LEN 2048    // Increased maximum length for filenames
 
 static int validate_chunk_size(size_t chunk_size) {
     if (chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE) {
@@ -90,10 +90,10 @@ static int process_file(const char *input_file, const char *output_file, size_t 
         samples_processed += samples_read;
     }
     
-    if (error_occurred) {
-        fprintf(stderr, "Error occurred while processing samples\n");
-    } else if (ferror(f_in)) {
+    // Check for read errors
+    if (ferror(f_in)) {
         fprintf(stderr, "Error reading input file: %s\n", strerror(errno));
+        error_occurred = 1;
     }
     
     // Free resources
@@ -127,7 +127,7 @@ static int extract_core_id(const char *filename) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 5 || argc > 7) {  // 2-3 arguments * 2 (flag + value) + 1 (program name)
+    if (argc < 3 || argc > 5) { 
         printf("Usage: %s --data-dir <dir> [--chunk-size <size>]\n", argv[0]);
         printf("  --data-dir: directory containing profile data bin files\n");
         printf("  --chunk-size: optional number of samples to process at once (default: %d, max: %d)\n",
@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
     
     // Validate required arguments
     if (!data_dir) {
-        printf("Error: Input and output directories are required\n");
+        printf("Error: Data directory is required\n");
         return EXIT_FAILURE;
     }
     
@@ -191,7 +191,12 @@ int main(int argc, char *argv[]) {
         
         // Check if it's a regular file
         char full_path[MAX_FILENAME_LEN];
-        snprintf(full_path, sizeof(full_path), "%s/%s", data_dir, entry->d_name);
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", data_dir, entry->d_name);
+        if (path_len >= sizeof(full_path) || path_len < 0) {
+            fprintf(stderr, "Path too long or encoding error: %s/%s\n", data_dir, entry->d_name);
+            error_occurred = 1;
+            continue;
+        }
         
         struct stat st;
         if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -212,12 +217,24 @@ int main(int argc, char *argv[]) {
         char input_path[MAX_FILENAME_LEN];
         char output_path[MAX_FILENAME_LEN];
         
-        snprintf(input_path, sizeof(input_path), "%s/%s", data_dir, entry->d_name);
-        snprintf(output_path, sizeof(output_path), "%s/profiling_results_%d.csv", data_dir, core_id);
+        path_len = snprintf(input_path, sizeof(input_path), "%s/%s", data_dir, entry->d_name);
+        if (path_len >= sizeof(input_path) || path_len < 0) {
+            fprintf(stderr, "Path too long or encoding error: %s/%s\n", data_dir, entry->d_name);
+            error_occurred = 1;
+            continue;
+        }
+        
+        path_len = snprintf(output_path, sizeof(output_path), "%s/profiling_results_%d.csv", data_dir, core_id);
+        if (path_len >= sizeof(output_path) || path_len < 0) {
+            fprintf(stderr, "Path too long or encoding error: %s/profiling_results_%d.csv\n", data_dir, core_id);
+            error_occurred = 1;
+            continue;
+        }
         
         printf("Processing file: %s -> %s\n", input_path, output_path);
         
-        if (process_file(input_path, output_path, chunk_size) == 0) {
+        int result = process_file(input_path, output_path, chunk_size);
+        if (result == 0) {
             processed_files++;
         } else {
             error_occurred = 1;
