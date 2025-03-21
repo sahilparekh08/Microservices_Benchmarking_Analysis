@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # TODO: 
-# change num cores
 # runtime for 100, 1000 requests on same amount of cores
-# more csv data for time vs instructions / llc data for every req like in the median processing
 # check on the workload gen params
 # remove the non execution times in the trace perf plot and check the instructions, llc graphs for the non overlapping exec times for each req, basically when the exec is waiting, dont consider that time interval in the plot
 
@@ -61,6 +59,9 @@ make_dirs() {
     echo "mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data"
     mkdir -p $DATA_DIR/workload/$curr_time/data/profile_data
 
+    echo "mkdir -p $DATA_DIR/workload/$curr_time/data/trace_data"
+    mkdir -p $DATA_DIR/workload/$curr_time/data/trace_data
+
     echo "mkdir -p $DATA_DIR/workload/$curr_time/plots"
     mkdir -p $DATA_DIR/workload/$curr_time/plots
 
@@ -82,7 +83,7 @@ cleanup() {
         return
     fi
 
-    DOCKER_CONTAINER_SERVICE_CONFIG_PATH="$DATA_DIR/docker_container_service_config.csv"
+    DOCKER_CONTAINER_SERVICE_CONFIG_PATH="$DATA_DIR/data/trace_data/docker_container_service_config.csv"
     if [ -f "$DOCKER_CONTAINER_SERVICE_CONFIG_PATH" ]; then
         echo "rm $DOCKER_CONTAINER_SERVICE_CONFIG_PATH"
         rm "$DOCKER_CONTAINER_SERVICE_CONFIG_PATH"
@@ -222,13 +223,14 @@ $SCRIPTS_DIR/profile_core.sh --core-to-pin "$CORE_TO_PIN_PROFILER" --target-core
 }
 echo -e "--------------------------------------------------\n"
 
-exit 0
-
 echo "sleep 5"
 sleep 5
 
-echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \$4}' > \"$DATA_DIR/docker_container_service_config.csv\")"
-(cd "$DOCKER_COMPOSE_DIR" && docker compose ps | awk '{print $1 "," $4}' > "$DATA_DIR/docker_container_service_config.csv")
+echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose ps | awk '{print \$1 \",\" \$4}' > \"$DATA_DIR/data/trace_data/docker_container_service_config.csv\")"
+(cd "$DOCKER_COMPOSE_DIR" && docker compose ps | awk '{print $1 "," $4}' > "$DATA_DIR/data/trace_data/docker_container_service_config.csv") || {
+    echo "Failed to get docker container service config"
+    exit 1
+}
 
 echo -e "\n--------------------------------------------------"
 echo "Running collect_analyse_jaeger_traces.sh"

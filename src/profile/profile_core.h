@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 
-#define PROFILE_DATA_FILE_PREFIX "profile_data_"
+#define CSV_PROFILE_DATA_FILE_PREFIX "profile_data_"
 #define PROFILE_DATA_FILE_SUFFIX ".bin"
 
 typedef struct {

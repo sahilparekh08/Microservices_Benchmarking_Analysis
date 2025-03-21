@@ -30,10 +30,11 @@ def load_data(
         ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     global DEFAULT_SERVICE_NAME
 
-    jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+    jaeger_traces_csv_file_path: str = os.path.join(data_dir, 
                                                     f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
     if not os.path.exists(jaeger_traces_csv_file_path):
-        jaeger_traces_csv_file_path: str = os.path.join(data_dir, "data", 
+        print(f"[ERROR:] Jaeger traces data file [{jaeger_traces_csv_file_path}] not found, finding the {DEFAULT_SERVICE_NAME} traces data file.")
+        jaeger_traces_csv_file_path: str = os.path.join(data_dir, 
                                                     f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
 
     jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)

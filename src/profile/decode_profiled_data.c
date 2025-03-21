@@ -16,20 +16,14 @@ int process_profile_data(char* input_file) {
     }
 
     char output_file[2048];
-    if (strlen(input_file) <= 4) {
+    char *core_str = strstr(input_file, "core_");
+    if (!core_str) {
         printf("Error: Invalid input file name\n");
         fclose(f_in);
         return EXIT_FAILURE;
     }
-    if(strlen(input_file) > 2048) {
-        printf("Error: Input file name too long\n");
-        fclose(f_in);
-        return EXIT_FAILURE;
-    }
-    size_t len = strlen(input_file) - 4;
-    strncpy(output_file, input_file, len);
-    output_file[strlen(input_file) - 4] = '\0';
-    strcat(output_file, ".csv");
+    snprintf(output_file, sizeof(output_file), "%.*s%s%s.csv", 
+             (int)(core_str - input_file), input_file, CSV_PROFILE_DATA_FILE_PREFIX, core_str + 5);
     
     // Open output file
     FILE *f_out = fopen(output_file, "w");
@@ -127,8 +121,7 @@ int main(int argc, char *argv[]) {
         }
         
         // Check if file is a profile data file
-        if (strstr(entry->d_name, PROFILE_DATA_FILE_PREFIX) == NULL || 
-            strstr(entry->d_name, PROFILE_DATA_FILE_SUFFIX) == NULL) {
+        if (strstr(entry->d_name, PROFILE_DATA_FILE_SUFFIX) == NULL) {
             continue;
         }
         

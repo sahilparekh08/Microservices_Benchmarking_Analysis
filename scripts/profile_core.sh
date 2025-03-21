@@ -70,7 +70,7 @@ cleanup() {
     DECODE_PROFILED_DATA_COMPILED_PATH="$PROFILE_SRC_DIR/decode_profiled_data"
 
     if [[ -f "$PROFILE_CORE_COMPILED_PATH" ]]; then
-        echo "rm $PROFILE_CORE_COMPILED_PATH"
+        echo -e "\nrm $PROFILE_CORE_COMPILED_PATH"
         rm "$PROFILE_CORE_COMPILED_PATH"
     fi
 
