@@ -71,7 +71,7 @@ def parse_and_save_traces(service_name_for_traces: str, data_dir_for_curr_run: s
 
         print(f"[{counter}/{num_traces}] Parsing trace [{trace_id}]")
 
-        span_id_to_span_map = create_span_data_graph(trace)
+        span_id_to_span_map: Dict[str, SpanData] = create_span_data_graph(trace)
 
         for span_id, span in span_id_to_span_map.items():
             span_non_idle_execution_time = span.get_non_idle_execution_time()
