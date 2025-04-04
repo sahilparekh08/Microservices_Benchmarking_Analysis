@@ -18,7 +18,6 @@ def calculate_percentiles(df: pd.DataFrame, column: str) -> Tuple[pd.DataFrame, 
     data: pd.DataFrame = get_processed_df(df, column, True)
     data[column] = data[column].replace(0, np.nan)
     data = data.dropna()
-
     median: float = float(np.median(data[column]))
     p25: float = float(np.percentile(data[column], 25))
     p75: float = float(np.percentile(data[column], 75))
@@ -35,7 +34,7 @@ def plot_data_with_fixed_x_axis(
     x_min: int,
     x_max: int
 ) -> None:
-    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=16)  
+    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=10)  
     axes[position].set_xlim(x_min, x_max)
 
 def plot_data(
@@ -48,13 +47,20 @@ def plot_data(
     label: str,
     color: str,
     position: int,
-    title: str
+    title: str,
+    p99_cutoff_percent: float = 0.05
 ) -> None:
-    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=16)  
+    axes[position].scatter(data["Time"], data[label], label=label, color=color, marker="o", s=10)  
     axes[position].axhline(median, color=color, linestyle="--", label=f"{title} Median", alpha=0.7)
     axes[position].axhline(p25, color=color, linestyle=":", label=f"{title} 25th", alpha=0.5)
     axes[position].axhline(p75, color=color, linestyle=":", label=f"{title} 75th", alpha=0.5)
     axes[position].axhline(p99, color=color, linestyle=":", label=f"{title} 99th", alpha=0.5)
+    
+    above_99: int = len(data[data[label] > p99])
+    y_lim_max: float = data[label].max() * 1.1
+    if above_99 > 0 and above_99 < len(data) * p99_cutoff_percent:
+        y_lim_max = max(y_lim_max, p99 * 1.1)
+    axes[position].set_ylim(0, y_lim_max)
 
 def add_text_box(
     axes: plt.Axes, 
@@ -139,7 +145,7 @@ def main() -> None:
 
         plot_data(axes, loads, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0, "Loads")
         plot_data(axes, misses, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0, "Misses")
-        plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 1, "Instr")
+        plot_data(axes, instructions, instructions_median, instructions_25th, instructions_75th, instructions_99th, "Instructions", "green", 1, "Instr", 0.1)
 
         add_text_box(axes, 0, loads_median, loads_25th, loads_75th, loads_99th, "LLC-loads", "blue", 0)
         add_text_box(axes, 0, misses_median, misses_25th, misses_75th, misses_99th, "LLC-misses", "red", 0.25)

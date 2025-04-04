@@ -74,14 +74,11 @@ def plot_histogram(
         y_max: float
         ) -> None:
     sns.set_style("whitegrid")
-    
     sns.histplot(data, kde=True, ax=ax, color='steelblue', alpha=0.7)
-    
     ax.axvline(stats['median'], color='red', linestyle='--', linewidth=1.5, label='Median')
     ax.axvline(stats['q25'], color='green', linestyle='--', linewidth=1.5, label='25th Percentile')
     ax.axvline(stats['q75'], color='blue', linestyle='--', linewidth=1.5, label='75th Percentile')
     ax.axvline(stats['p99'], color='purple', linestyle='--', linewidth=1.5, label='99th Percentile') 
-    
     ax.set_title(f'{operation}', fontsize=12, fontweight='bold', pad=10)
     ax.set_xlabel('Non-Idle Execution Time', fontsize=10)
     ax.set_ylabel('Frequency', fontsize=10)
@@ -93,10 +90,7 @@ def plot_histogram(
     ax.tick_params(axis='both', labelsize=8)
     ax.grid(True, linestyle='--', alpha=0.7)
 
-    if len(operation) < 20:
-        ax.legend(loc='upper left', fontsize=8)
-
-def plot_jaeger_service_data(
+def plot_service_histograms(
         container_jaeger_traces_df: pd.DataFrame, 
         per_service_operation_stats: pd.DataFrame,
         unique_services: np.ndarray,
@@ -109,7 +103,6 @@ def plot_jaeger_service_data(
     for service in unique_services:
         service_data_df: pd.DataFrame = container_jaeger_traces_df[container_jaeger_traces_df['service'] == service]
         service_stats_df: pd.DataFrame = per_service_operation_stats[per_service_operation_stats['service'] == service]
-
         histograms = []
         for operation, stats in service_stats_df.groupby('operation'):
             operation_data = service_data_df[service_data_df['operation'] == operation]['non_idle_execution_time']
@@ -118,9 +111,7 @@ def plot_jaeger_service_data(
         
         x_min = service_data_df['non_idle_execution_time'].min()
         x_max = service_data_df['non_idle_execution_time'].max() * 1.05
-        
         y_max = max([h.max() for h in histograms]) * 1.1 
-
         num_operations: int = len(service_stats_df)
         plots_per_row: int = 4
         rows: int = math.ceil(num_operations / plots_per_row)
@@ -128,7 +119,6 @@ def plot_jaeger_service_data(
         fig, axs = plt.subplots(rows, plots_per_row, figsize=(12, 5 * rows))
         plt.style.use('ggplot')
         axs = np.array(axs).reshape(rows, plots_per_row)
-
         fig.suptitle(
             f"Non-Idle Execution Time - {container_name}\nService: {service} | Test: {test_name} | Config: {config}", 
             fontsize=14, 
@@ -141,27 +131,47 @@ def plot_jaeger_service_data(
             row: int = plot_count // plots_per_row
             col: int = plot_count % plots_per_row
             ax: plt.Axes = axs[row, col]
-
             operation_data: pd.Series = service_data_df[service_data_df['operation'] == operation]['non_idle_execution_time']
             plot_histogram(ax, operation_data, str(operation), stats.iloc[0], x_min, x_max, y_max)
             plot_count += 1
-
         for i in range(plot_count, rows * plots_per_row):
             axs[i // plots_per_row, i % plots_per_row].axis('off')
 
         plt.tight_layout()
         plt.subplots_adjust(top=0.9, hspace=0.4, wspace=0.3)
-
-        output_file_path: str = os.path.join(
-            plot_dir, f"{container_name}_{test_name}_{config}_service_{service}_exec_time_dist.png"
-        )
-
+        output_file_path: str = os.path.join(plot_dir, f"{container_name}_{test_name}_{config}_service_{service}_exec_time_dist.png")
         plt.savefig(output_file_path, bbox_inches='tight', dpi=300)
         plt.close(fig)
-
         print(f'Plot saved: {output_file_path}')
 
     print("Done plotting Jaeger trace data")
+
+def plot_trace_non_idle_exec_times(
+        container_jaeger_traces_df: pd.DataFrame,
+        container_name: str,
+        test_name: str,
+        config: str,
+        data_dir: str,
+        plot_dir: str
+) -> None:
+    sns.set_style("whitegrid")
+    plt.figure(figsize=(12, 6))
+    plt.title(f"Non-Idle Execution Time - {container_name}\nTest: {test_name} | Config: {config}", fontsize=14)
+    plt.xlabel("Timestamp", fontsize=12)
+    plt.ylabel("Non-Idle Execution Time", fontsize=12)
+    plt.xticks(rotation=45)
+    
+    for service in container_jaeger_traces_df['service'].unique():
+        service_data = container_jaeger_traces_df[container_jaeger_traces_df['service'] == service]
+        service_data = service_data.sort_values(by='start_time')
+        min_start_time = service_data['start_time'].min()
+        start_time_series: pd.Series = service_data['start_time'] - min_start_time
+        plt.scatter(start_time_series, service_data['non_idle_execution_time'], label=service, alpha=0.5, s=10)
+    plt.legend()
+    output_file_path = os.path.join(plot_dir, f"non_idle_exec_time_trace_{container_name}_{test_name}_{config}.png")
+    plt.savefig(output_file_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f'Plot saved: {output_file_path}')
 
 def main() -> None:
     global DEFAULT_SERVICE_NAME
@@ -192,8 +202,13 @@ def main() -> None:
 
     print(f"Plotting Jaeger trace data for container [{container_name}] which covers the following services [{', '.join(unique_services)}]")
     print(f"Total traces: {len(container_jaeger_traces_df)}")
+    print(f"Unique services: {unique_services}")
     
-    plot_jaeger_service_data(container_jaeger_traces_df, per_service_operation_stats, unique_services, data_dir, plot_dir, container_name, test_name, config)
+    print(f"\nPlotting execution times of traces wrt time...")
+    plot_trace_non_idle_exec_times(container_jaeger_traces_df, container_name, test_name, config, data_dir, plot_dir)
+
+    print(f"\nPlotting histograms for each service...")
+    plot_service_histograms(container_jaeger_traces_df, per_service_operation_stats, unique_services, data_dir, plot_dir, container_name, test_name, config)
 
 if __name__ == "__main__":
     main()

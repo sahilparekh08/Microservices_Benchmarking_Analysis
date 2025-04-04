@@ -18,6 +18,7 @@ class SpanData:
             return self.__non_idle_execution_time
 
         if len(self.children) == 0:
+            self.non_idle_intervals.append((self.start_time, self.end_time))
             return self.duration
         
         self.children.sort(key=lambda x: x.start_time)
