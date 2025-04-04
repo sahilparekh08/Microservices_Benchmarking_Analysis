@@ -37,170 +37,141 @@ def load_traces_data(
 ) -> pd.DataFrame:
     global DEFAULT_SERVICE_NAME
 
-    jaeger_traces_csv_file_path: str = os.path.join(data_dir, 
-                                                    f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
+    jaeger_traces_csv_file_path: str = os.path.join(data_dir, f"{service_name_for_traces}_{test_name}_{config}_traces_data.csv")
     if not os.path.exists(jaeger_traces_csv_file_path):
         print(f"File not found: {jaeger_traces_csv_file_path}, trying default service name: {DEFAULT_SERVICE_NAME}")
-        jaeger_traces_csv_file_path: str = os.path.join(data_dir, 
-                                                    f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
+        jaeger_traces_csv_file_path: str = os.path.join(data_dir, f"{DEFAULT_SERVICE_NAME}_{test_name}_{config}_traces_data.csv")
 
     jaeger_traces_df: pd.DataFrame = pd.read_csv(jaeger_traces_csv_file_path)
     container_jaeger_traces_df: pd.DataFrame = jaeger_traces_df[jaeger_traces_df['container_name'] == container_name]
     return container_jaeger_traces_df
 
-# TODO: revisit this
-# once you have non idle intervals of all traces for a trace id, find the intervals for the container where any service in the container is doing some job
+def get_trace_id_to_non_idle_intervals(traces_df: pd.DataFrame) -> Dict[str, List[Dict[int, int]]]:
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]] = {}
+    for _, row in traces_df.iterrows():
+        trace_id = row['trace_id']
+        non_idle_intervals = row['non_idle_intervals'].split(";")
+        for interval in non_idle_intervals:
+            start, end = map(int, interval.split("-"))
+            if trace_id not in trace_id_to_non_idle_intervals:
+                trace_id_to_non_idle_intervals[trace_id] = []
+            trace_id_to_non_idle_intervals[trace_id].append({start: end})
 
+    # merge intervals for each trace id
+    for trace_id, intervals in trace_id_to_non_idle_intervals.items():
+        merged_intervals = []
+        current_start, current_end = None, None
+        for interval in intervals:
+            for start, end in interval.items():
+                if current_start is None:
+                    current_start, current_end = start, end
+                elif start <= current_end:
+                    current_end = max(current_end, end)
+                else:
+                    merged_intervals.append({current_start: current_end})
+                    current_start, current_end = start, end
+        if current_start is not None:
+            merged_intervals.append({current_start: current_end})
+        trace_id_to_non_idle_intervals[trace_id] = merged_intervals
 
-def get_non_overlapping_longest_duration_traces(traces_df: pd.DataFrame) -> pd.DataFrame:
-    result_rows = []
-    
-    for trace_id in traces_df['trace_id'].unique():
-        trace_data = traces_df[traces_df['trace_id'] == trace_id].copy()
-        trace_data = trace_data.sort_values(by='duration', ascending=False)
-        selected_spans = []
-        for _, row in trace_data.iterrows():
-            start_time = row['start_time']
-            end_time = row['end_time']
-            overlaps = False
-            for span_start, span_end in selected_spans:
-                if not (end_time <= span_start or start_time >= span_end):
-                    overlaps = True
-                    break
-            if not overlaps:
-                selected_spans.append((start_time, end_time))
-                result_rows.append(row)
-    if not result_rows:
-        return pd.DataFrame()
-    
-    return pd.DataFrame(result_rows)
+    return trace_id_to_non_idle_intervals
 
 def plot_aligned_median_resource_usage(
-    traces_df: pd.DataFrame, 
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
     core_to_profile_data_df: Dict[str, pd.DataFrame],
     profile_data_dir: str,
     output_dir: str, 
     config: str, 
-    container_name: str, 
-    service_name_for_traces: str,
+    container_name: str,
     save_median_resource_usage_csvs: bool
 ) -> None:
-    print(f"Plotting aligned median resource usage for traces in {container_name} with service name {service_name_for_traces} and config {config}")
-    print(f"Original trace data loaded with {len(traces_df)} traces.")
-    non_overlapping_traces_df = get_non_overlapping_longest_duration_traces(traces_df)
-    print(f"Found {len(non_overlapping_traces_df)} non-overlapping traces from the original trace data.")
-    
-    trace_durations: List[Dict[str, Any]] = []
-    for _, row in non_overlapping_traces_df.iterrows():
-        duration = row['duration']
-        if duration <= 0:
-            continue
-        trace_durations.append({
-            'trace_id': row['trace_id'],
-            'start_time': row['start_time'],
-            'end_time': row['end_time'],
-            'duration': duration,
-            'non_idle_intervals': row['non_idle_intervals']
-        })
-    if not trace_durations:
-        print("No valid traces found with positive duration.")
-        return
+    print(f"Plotting aligned median resource usage for traces in {container_name} with config {config}")
+    print(f"Found {len(trace_id_to_non_idle_intervals)} traces with non idle intervals.")
 
-    # Calculate the median number of non idle intervals across all traces
+    # Calculate median number of non idle intervals across all traces
     non_idle_intervals_lens: List[int] = []
-    for trace_info in trace_durations:
-        non_idle_inervals_split: List[str] = trace_info['non_idle_intervals'].split(";")
-        non_idle_intervals_lens.append(len(non_idle_inervals_split))
-    dist_num_non_idle_intervals: Dict[int, int] = {}
-    for count in non_idle_intervals_lens:
-        if count in dist_num_non_idle_intervals:
-            dist_num_non_idle_intervals[count] += 1
-        else:
-            dist_num_non_idle_intervals[count] = 1
-    print(f"Distribution of non idle intervals: {dist_num_non_idle_intervals}")
-    num_non_idle_intervals: int = int(np.median(non_idle_intervals_lens))
-    print(f"Median number of non idle intervals: {num_non_idle_intervals}")
+    for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
+        non_idle_intervals_lens.append(len(non_idle_intervals))
+    if not non_idle_intervals_lens:
+        print("No non idle intervals found for any traces.")
+        return
+    len_non_idle_intervals_to_count_map: Dict[int, int] = {}
+    for length in non_idle_intervals_lens:
+        if length not in len_non_idle_intervals_to_count_map:
+            len_non_idle_intervals_to_count_map[length] = 0
+        len_non_idle_intervals_to_count_map[length] += 1
+    if len_non_idle_intervals_to_count_map:
+        print(f"Non idle intervals length distribution: {len_non_idle_intervals_to_count_map}")
+    non_idle_intervals_lens = sorted(non_idle_intervals_lens)
+    median_non_idle_intervals: int = int(np.median(non_idle_intervals_lens))
+    print(f"Median number of non idle intervals: {median_non_idle_intervals}")
 
     # filter out traces with non idle intervals not equal to median
-    trace_durations = [trace_info for trace_info in trace_durations 
-                       if len(trace_info['non_idle_intervals'].split(";")) == num_non_idle_intervals]
-    if not trace_durations:
-        print("No traces found with the specified number of non idle intervals.")
+    trace_id_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items() if len(non_idle_intervals) == median_non_idle_intervals}
+    if not trace_id_to_non_idle_intervals:
+        print(f"No traces found with {median_non_idle_intervals} number of non idle intervals.")
+        print(f"Non idle interval lens: {non_idle_intervals_lens}")
         return
     
     # calculate the median duration for each non idle interval
     median_duration_per_non_idle_interval: Dict[int, int] = {}
     non_idle_duration_index_to_trace_id_non_idle_duration_map: Dict[int, Dict[str, int]] = {}
-    for i in range(num_non_idle_intervals):
+    for i in range(median_non_idle_intervals):
         non_idle_duration_index_to_trace_id_non_idle_duration_map[i] = {}
-    for i in range(num_non_idle_intervals):
+    for i in range(median_non_idle_intervals):
         durations: List[int] = []
-        for trace_info in trace_durations:
-            non_idle_intervals_split: List[str] = trace_info['non_idle_intervals'].split(";")
-            non_idle_interval: str = non_idle_intervals_split[i]
-            start, end = map(int, non_idle_interval.split("-"))
+        for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
+            non_idle_interval: Dict[int, int] = non_idle_intervals[i]
+            start, end = list(non_idle_interval.items())[0]
             duration = end - start
-            non_idle_duration_index_to_trace_id_non_idle_duration_map[i][trace_info['trace_id']] = duration
+            non_idle_duration_index_to_trace_id_non_idle_duration_map[i][trace_id] = duration
             durations.append(duration)
         median_duration_per_non_idle_interval[i] = int(np.median(durations))
-    
-    # select traces whose duration lies in median +- 0.5 sd for each non idle interval
+
+    # select traces whose duration lies in median +- 1 sd for each non idle interval
     non_idle_interval_index_to_trace_ids: Dict[int, List[str]] = {}
-    for i in range(num_non_idle_intervals):
+    for i in range(median_non_idle_intervals):
         median_duration: int = median_duration_per_non_idle_interval[i]
-        sd_duration: float = np.std([trace_info['duration'] for trace_info in trace_durations])
-        lower_bound: int = int(median_duration - (sd_duration / 2)) 
-        upper_bound: int = int(median_duration + (sd_duration / 2))
+        sd_duration: float = np.std(list(non_idle_duration_index_to_trace_id_non_idle_duration_map[i].values()))
+        lower_bound: int = int(median_duration - (sd_duration)) 
+        upper_bound: int = int(median_duration + (sd_duration))
         trace_ids_list: List[str] = []
         for trace_id, duration in non_idle_duration_index_to_trace_id_non_idle_duration_map[i].items():
             if lower_bound <= duration <= upper_bound:
                 trace_ids_list.append(trace_id)
         non_idle_interval_index_to_trace_ids[i] = trace_ids_list
-    
     # take an intersection of trace ids from the set of selected traces across all non idle intervals
     selected_trace_ids: set[str] = []
-    for i in range(num_non_idle_intervals):
+    for i in range(median_non_idle_intervals):
         if i == 0:
             selected_trace_ids = set(non_idle_interval_index_to_trace_ids[i])
         else:
             selected_trace_ids = selected_trace_ids.intersection(set(non_idle_interval_index_to_trace_ids[i]))
     if not selected_trace_ids:
-        print("No traces found with the specified number of non idle intervals.")
+        print("No traces found that match the median duration +- 1 standard deviation criteria across all non idle intervals.")
         return
     
     # filter out traces with trace ids not in selected_trace_ids
-    trace_durations = [trace_info for trace_info in trace_durations 
-                          if trace_info['trace_id'] in selected_trace_ids]
-    if not trace_durations:
-        print("No traces found with the specified number of non idle intervals.")
+    trace_id_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items()
+                                        if trace_id in selected_trace_ids}
+    if not trace_id_to_non_idle_intervals:
+        print("No traces found after filtering by median duration +- 1 standard deviation.")
         return
     
+    # process perf data
     normalised_perf_data_per_non_idle_interval: Dict[int, # non idle interval index
                                                         List[ #records for each timestamp
                                                             Dict[str, Any]
                                                             ]
                                                         ] = {}
-
-    for i in range(num_non_idle_intervals):
+    for i in range(median_non_idle_intervals):
         normalised_perf_data_per_non_idle_interval[i] = []
-    
-    for trace_info in trace_durations:
-        trace_id: str = trace_info['trace_id']
-        non_idle_intervals_split: List[str] = trace_info['non_idle_intervals'].split(";")
-        non_idle_intervals: List[Dict[str, int]] = []
-        for non_idle_interval in non_idle_intervals_split:
-            start, end = map(int, non_idle_interval.split("-"))
-            non_idle_intervals.append({
-                'start': start,
-                'end': end,
-                'duration': end - start
-            })
-
+    for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
         for i, non_idle_interval in enumerate(non_idle_intervals):
-            non_idle_interval_start: int = non_idle_interval['start']
-            non_idle_interval_end: int = non_idle_interval['end']
-            non_idle_interval_duration: int = non_idle_interval['duration']
-            
+            non_idle_interval_start: int = list(non_idle_interval.keys())[0]
+            non_idle_interval_end: int = non_idle_interval[non_idle_interval_start]
+            non_idle_interval_duration: int = non_idle_interval_end - non_idle_interval_start
+
             # Get all timestamps from all cores within the non idle interval
             all_timestamps = set()
             for core_df in core_to_profile_data_df.values():
@@ -210,47 +181,46 @@ def plot_aligned_median_resource_usage(
                 ]
                 all_timestamps.update(core_df['Time'].unique())
             all_timestamps = sorted(list(all_timestamps))
-            
+
+            # Get updated core dfs for this timestamp range
+            updated_core_to_profile_data_df: Dict[str, pd.DataFrame] = {}
+            for core_id, core_df in core_to_profile_data_df.items():
+                core_df = core_df[
+                    (core_df['Time'] >= non_idle_interval_start) & 
+                    (core_df['Time'] <= non_idle_interval_end)
+                ]
+                updated_core_to_profile_data_df[core_id] = core_df
+
+            # get core with highest instructions for this trace
+            core_with_highest_instructions = None
+            max_instructions = 0
+            for core_id, core_df in updated_core_to_profile_data_df.items():
+                if not core_df.empty:
+                    total_instructions = core_df['Instructions'].sum()
+                    if total_instructions > max_instructions:
+                        max_instructions = total_instructions
+                        core_with_highest_instructions = core_id
+            if core_with_highest_instructions is None:
+                print(f"No instructions data found for trace {trace_id} for non idle interval {i}.")
+                continue
+
             # For each timestamp, sum up LLC loads and misses across all cores
             for timestamp in all_timestamps:
                 total_llc_loads = 0
                 total_llc_misses = 0
-                for core_df in core_to_profile_data_df.values():
-                    core_df = core_df[
-                        (core_df['Time'] >= non_idle_interval_start) & 
-                        (core_df['Time'] <= non_idle_interval_end)
-                    ]
+                for core_id, core_df in updated_core_to_profile_data_df.items():
                     if not core_df.empty:
                         timestamp_data = core_df[core_df['Time'] == timestamp]
                         if not timestamp_data.empty:
                             total_llc_loads += timestamp_data['LLC-loads'].iloc[0]
                             total_llc_misses += timestamp_data['LLC-misses'].iloc[0]
-                
-                # Get instructions for the core with highest instructions for this trace
-                core_with_highest_instructions = None
-                max_instructions = 0
-                for core_id, core_df in core_to_profile_data_df.items():
-                    core_df = core_df[
-                        (core_df['Time'] >= non_idle_interval_start) & 
-                        (core_df['Time'] <= non_idle_interval_end)
-                    ]
-                    if not core_df.empty:
-                        total_instructions = core_df['Instructions'].sum()
-                        if total_instructions > max_instructions:
-                            max_instructions = total_instructions
-                            core_with_highest_instructions = core_id
-                if core_with_highest_instructions is None:
-                    continue
-                instructions_df = core_to_profile_data_df[core_with_highest_instructions]
-                instructions_df = instructions_df[
-                    (instructions_df['Time'] >= non_idle_interval_start) & 
-                    (instructions_df['Time'] <= non_idle_interval_end)
-                ]
-                if instructions_df.empty:
-                    continue
 
                 # Get instructions for this timestamp
-                timestamp_instructions = instructions_df[instructions_df['Time'] == timestamp]['Instructions'].iloc[0] if not instructions_df[instructions_df['Time'] == timestamp].empty else 0
+                instructions_df = updated_core_to_profile_data_df[core_with_highest_instructions]
+                if not instructions_df.empty:
+                    timestamp_instructions = instructions_df[instructions_df['Time'] == timestamp]['Instructions'].iloc[0] if not instructions_df[instructions_df['Time'] == timestamp].empty else 0
+                else:
+                    continue
 
                 # Normalize the data
                 relative_position = (timestamp - non_idle_interval_start) / non_idle_interval_duration
@@ -264,24 +234,24 @@ def plot_aligned_median_resource_usage(
                     'Instructions': timestamp_instructions,
                     'core_id': core_with_highest_instructions
                 })
-        
+
     if not normalised_perf_data_per_non_idle_interval:
         print("No performance data found within trace windows.")
         return
-
+    
     non_idle_interval_idx_to_time_points: Dict[int, np.ndarray] = {}
-    non_idle_interval_idx_to_binned_llc_loads: Dict[int, List[List[float]]] = {}
-    non_idle_interval_idx_to_binned_llc_misses: Dict[int, List[List[float]]] = {}
-    non_idle_interval_idx_to_core_id_to_binned_instructions: Dict[int, Dict[str, List[List[float]]]] = {}
+    non_idle_interval_idx_to_median_llc_loads: Dict[int, List[float]] = {}
+    non_idle_interval_idx_to_median_llc_misses: Dict[int, List[float]] = {}
+    non_idle_interval_idx_to_core_id_to_median_instructions: Dict[int, Dict[str, List[float]]] = {}
 
     for non_idle_interval_idx, median_duration in median_duration_per_non_idle_interval.items():
         num_bin_in_microseconds: int = median_duration
         bin_edges: np.ndarray = np.linspace(0, 1, num_bin_in_microseconds + 1)
-        bin_centers: np.ndarray = (bin_edges[:-1] + bin_edges[1:]) / 2 # to plot the data in the middle of the bin aka only for plotting purposes
-
+        bin_centers: np.ndarray = (bin_edges[:-1] + bin_edges[1:]) / 2
         binned_llc_loads: List[List[float]] = [[] for _ in range(num_bin_in_microseconds)]
         binned_llc_misses: List[List[float]] = [[] for _ in range(num_bin_in_microseconds)]
         binned_instructions: Dict[str, List[List[float]]] = {core_id: [[] for _ in range(num_bin_in_microseconds)] for core_id in core_to_profile_data_df.keys()}
+
         for row in normalised_perf_data_per_non_idle_interval[non_idle_interval_idx]:
             bin_idx: int = min(int(row['relative_position'] * num_bin_in_microseconds), num_bin_in_microseconds - 1)
             binned_llc_loads[bin_idx].append(row['LLC-loads'])
@@ -290,7 +260,7 @@ def plot_aligned_median_resource_usage(
 
         median_llc_loads: List[float] = []
         median_llc_misses: List[float] = []
-        core_id_to_instructions: Dict[str, List[float]] = {core_id: [] for core_id in core_to_profile_data_df.keys()}
+        core_id_to_instructions: Dict[str, List[float]] = {core_id: [] for core_id in core_to_profile_data_df.keys()}   
         valid_bin_centers: List[float] = []
         for i in range(num_bin_in_microseconds):
             if binned_llc_loads[i] and binned_llc_misses[i]:
@@ -303,10 +273,11 @@ def plot_aligned_median_resource_usage(
                         np.median([x for x in binned_instructions[core_id][i] if x > 0]) if binned_instructions[core_id][i] else 0
                     )
         time_points: np.ndarray = np.array(valid_bin_centers) * median_duration
+
         non_idle_interval_idx_to_time_points[non_idle_interval_idx] = time_points
-        non_idle_interval_idx_to_binned_llc_loads[non_idle_interval_idx] = median_llc_loads
-        non_idle_interval_idx_to_binned_llc_misses[non_idle_interval_idx] = median_llc_misses
-        non_idle_interval_idx_to_core_id_to_binned_instructions[non_idle_interval_idx] = core_id_to_instructions
+        non_idle_interval_idx_to_median_llc_loads[non_idle_interval_idx] = median_llc_loads
+        non_idle_interval_idx_to_median_llc_misses[non_idle_interval_idx] = median_llc_misses
+        non_idle_interval_idx_to_core_id_to_median_instructions[non_idle_interval_idx] = core_id_to_instructions
 
     total_median_duration_across_non_idle_intervals: float = sum(median_duration_per_non_idle_interval.values())
 
@@ -315,7 +286,6 @@ def plot_aligned_median_resource_usage(
     llc_axs: plt.Axes
     instruction_fig: plt.Figure
     instruction_ax: plt.Axes
-
     if len(core_to_profile_data_df) == 1:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
         llc_axs = axes[0]
@@ -323,55 +293,47 @@ def plot_aligned_median_resource_usage(
         llc_fig = fig
         instruction_fig = fig
         llc_fig.suptitle(
-            f"LLC and Instructions data across Non-Idle Intervals\n{container_name} | {service_name_for_traces} | {config}\n{num_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            f"LLC and Instructions data across Non-Idle Intervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
             fontsize=14, fontweight='bold'
         )
     else:
         llc_fig, llc_axs = plt.subplots(figsize=(15, 10))
         llc_fig.suptitle(
-            f"LLC across Non-Idle INtervals\n{container_name} | {service_name_for_traces} | {config}\n{num_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            f"LLC across Non-Idle INtervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
             fontsize=14, fontweight='bold'
         )
         instruction_fig, instruction_ax = plt.subplots(figsize=(15, 10))
         instruction_fig.suptitle(
-            f"Instructions Across Non-Idle Intervals\n{container_name} | {service_name_for_traces} | {config}\n{num_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            f"Instructions Across Non-Idle Intervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
             fontsize=14, fontweight='bold'
         )
-    
+
     cumulative_time = 0
     all_time_points = []
     llc_loads_data = []
     llc_misses_data = []
     break_points = []
-
-    for idx in range(num_non_idle_intervals):
+    for idx in range(median_non_idle_intervals):
         time_points = non_idle_interval_idx_to_time_points[idx]
-        median_llc_loads = non_idle_interval_idx_to_binned_llc_loads[idx]
-        median_llc_misses = non_idle_interval_idx_to_binned_llc_misses[idx]
+        median_llc_loads = non_idle_interval_idx_to_median_llc_loads[idx]
+        median_llc_misses = non_idle_interval_idx_to_median_llc_misses[idx]
         adjusted_time_points = time_points + cumulative_time
         all_time_points.extend(adjusted_time_points)
         llc_loads_data.extend(median_llc_loads)
         llc_misses_data.extend(median_llc_misses)
-        if idx < num_non_idle_intervals - 1:
-            cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
+        if idx < median_non_idle_intervals - 1:
+            cumulative_time = adjusted_time_points[-1] + 10
             break_points.append(cumulative_time)
 
     llc_axs.scatter(all_time_points, llc_loads_data, color='blue', marker='o', s=10, label='LLC Loads', alpha=0.7)
     llc_axs.scatter(all_time_points, llc_misses_data, color='red', marker='^', s=10, label='LLC Misses', alpha=0.7)
     for break_point in break_points:
         llc_axs.axvline(x=break_point, color='gray', linestyle='--', alpha=1)
-    for i, break_point in enumerate(break_points):
-        llc_axs.annotate(f"End of interval {i+1}", 
-                    xy=(break_point - 5, llc_axs.get_ylim()[1] * 0.9),
-                    xytext=(break_point - 5, llc_axs.get_ylim()[1] * 0.9),
-                    fontsize=8, rotation=90)
-    llc_axs.set_title('Median LLC Loads and Misses Across Non-Idle Intervals', fontsize=12)
-    llc_axs.set_xlabel('Cumulative Time (μs)', fontsize=10)
-    llc_axs.set_ylabel('Count', fontsize=10)
-    llc_axs.set_xlim(0, cumulative_time + 10)
-    llc_axs.set_xticks(np.arange(0, cumulative_time + 10, step=10))
-    llc_axs.set_ylim(0, max(max(llc_loads_data), max(llc_misses_data)) * 1.1)
-    llc_axs.grid(True, linestyle='--', alpha=0.7)
+    llc_axs.set_xlabel("Time (μs)")
+    llc_axs.set_ylabel("LLC Loads/Misses")
+    llc_axs.set_title(f"LLC Loads and Misses across Non-Idle Intervals\n{container_name} | {config}")
+    llc_axs.legend()
+    llc_axs.grid(True, linestyle='--', alpha=0.3)
     llc_axs.legend(loc='upper right')
 
     if save_median_resource_usage_csvs:
@@ -382,18 +344,18 @@ def plot_aligned_median_resource_usage(
             'LLC-misses': llc_misses_data,
             "is_break_point": [1 if time in break_points else 0 for time in all_time_points]
         })
-        llc_data_csv_file_name = f"llc_data_{container_name}_{service_name_for_traces}_{config}.csv"
+        llc_data_csv_file_name = f"llc_data_{container_name}_{config}.csv"
         llc_data_df.to_csv(os.path.join(profile_data_dir, llc_data_csv_file_name), index=False)
         print(f"LLC data saved to {llc_data_csv_file_name} in {profile_data_dir}")
 
-    # Plot instructions for each core
+    # Plot instructions data
     cumulative_time = 0
     legend_items = []
     colors = plt.cm.tab10(np.linspace(0, 1, len(core_to_profile_data_df)))
     instructions_data = []
-    for idx in range(num_non_idle_intervals):
+    for idx in range(median_non_idle_intervals):
         time_points = non_idle_interval_idx_to_time_points[idx]
-        core_id_to_instructions = non_idle_interval_idx_to_core_id_to_binned_instructions[idx]
+        core_id_to_instructions = non_idle_interval_idx_to_core_id_to_median_instructions[idx]
         adjusted_time_points = time_points + cumulative_time
         for core_idx, (core_id, instructions) in enumerate(core_id_to_instructions.items()):
             if any(instructions):
@@ -407,71 +369,64 @@ def plot_aligned_median_resource_usage(
                 )
                 if idx == 0:
                     legend_items.append(scatter)
-
             for i, instruction in enumerate(instructions):
                 instructions_data.append({
                     'Time': adjusted_time_points[i],
                     'Core ID': core_id,
                     'Instructions': instruction
                 })
-                
-        if idx < num_non_idle_intervals - 1:
+        if idx < median_non_idle_intervals - 1:
             cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
             instruction_ax.axvline(x=cumulative_time, color='r', linestyle='--', alpha=1)
-            instruction_ax.annotate(f"End of interval {idx+1}", 
-                                   xy=(cumulative_time - 5, instruction_ax.get_ylim()[1] * 0.9),
-                                   xytext=(cumulative_time - 5, instruction_ax.get_ylim()[1] * 0.9),
-                                   fontsize=8, rotation=90)
     
     instruction_ax.set_xlabel('Time (μs)', fontsize=10)
     instruction_ax.set_ylabel('Instructions', fontsize=10)
     instruction_ax.set_xlim(0, cumulative_time + 10)
     instruction_ax.set_xticks(np.arange(0, cumulative_time + 10, step=10))
     instruction_ax.set_ylim(0, max(max(instructions) for instructions in core_id_to_instructions.values()) * 1.1)
-    instruction_ax.grid(True, linestyle='--', alpha=0.5)
+    instruction_ax.grid(True, linestyle='--', alpha=0.3)
     instruction_ax.legend(loc='upper right')
 
     if save_median_resource_usage_csvs:
         # Save the instructions data to CSV file
         instructions_data_df = pd.DataFrame(instructions_data)
-        instructions_data_csv_file_name = f"instructions_data_{container_name}_{service_name_for_traces}_{config}.csv"
+        instructions_data_csv_file_name = f"instructions_data_{container_name}_{config}.csv"
         instructions_data_df.to_csv(os.path.join(profile_data_dir, instructions_data_csv_file_name), index=False)
         print(f"Instructions data saved to {instructions_data_csv_file_name} in {profile_data_dir}")
 
     if len(core_to_profile_data_df) == 1:
         llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        llc_instructions_png_file_name = f"llc_instructions_{container_name}_{service_name_for_traces}_{config}.png"
+        llc_instructions_png_file_name = f"llc_instructions_{container_name}_{config}.png"
         llc_fig.savefig(os.path.join(output_dir, llc_instructions_png_file_name))
         plt.close(llc_fig)
         print(f"Aligned median resource usage plot saved as {llc_instructions_png_file_name} in {output_dir}")
     else:
         llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        llc_png_file_name = f"llc_{container_name}_{service_name_for_traces}_{config}.png"
+        llc_png_file_name = f"llc_{container_name}_{config}.png"
         llc_fig.savefig(os.path.join(output_dir, llc_png_file_name))
         plt.close(llc_fig)
         instruction_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        instruction_png_file_name = f"instructions_{container_name}_{service_name_for_traces}_{config}.png"
+        instruction_png_file_name = f"instructions_{container_name}_{config}.png"
         instruction_fig.savefig(os.path.join(output_dir, instruction_png_file_name))
         plt.close(instruction_fig)
         print(f"Aligned median resource usage plots saved as {llc_png_file_name} and {instruction_png_file_name} in {output_dir}")
     
-    print(f"Number of traces analysed: {len(trace_durations)}")
+    print(f"Number of traces analysed: {len(trace_id_to_non_idle_intervals)}")
 
-def get_highest_resource_usage_traces(traces_df: pd.DataFrame, 
-                                      core_to_profile_data_df: Dict[str, pd.DataFrame], 
-                                      num_samples: int) -> pd.DataFrame:
-    non_overlapping_traces_df = get_non_overlapping_longest_duration_traces(traces_df)
-    
+def get_highest_resource_usage_traces(
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
+    core_to_profile_data_df: Dict[str, pd.DataFrame],
+    num_samples: int
+) -> pd.DataFrame:
     trace_stats = []
-    
     min_perf_time = min([df['Time'].min() for df in core_to_profile_data_df.values()])
     max_perf_time = max([df['Time'].max() for df in core_to_profile_data_df.values()])
     
-    for _, row in non_overlapping_traces_df.iterrows():
-        trace_id = row['trace_id']
-        trace_start = row['start_time']
-        trace_end = row['end_time']
-        duration = row['duration']
+    for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
+        non_idle_intervals = sorted(non_idle_intervals, key=lambda x: list(x.keys())[0])
+        trace_start = non_idle_intervals[0][list(non_idle_intervals[0].keys())[0]] # get the start of the first interval
+        trace_end = non_idle_intervals[-1][list(non_idle_intervals[-1].keys())[0]] # get the end of the last interval
+        duration = trace_end - trace_start
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
         if trace_start < min_perf_time or trace_end > max_perf_time:
@@ -504,7 +459,6 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame,
             if instructions_count > highest_instructions:
                 highest_instructions = instructions_count
                 curr_core_with_highest_instructions = core_no
-        
         total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
         
         trace_stats.append({
@@ -525,9 +479,7 @@ def get_highest_resource_usage_traces(traces_df: pd.DataFrame,
     trace_stats_df = pd.DataFrame(trace_stats)
     if trace_stats_df.empty:
         return pd.DataFrame()
-    
     trace_stats_df = trace_stats_df.sort_values(by='total_resource_usage', ascending=False)
-    
     top_traces = trace_stats_df.head(num_samples)
     
     print(f"Top {len(top_traces)} traces by resource usage:")
@@ -612,12 +564,10 @@ def save_trace_profile_csvs(
     print(f"Saved trace profile CSVs to {output_dir}") 
 
 def plot_traces_start_end_times_and_perf_data(
-    traces_df: pd.DataFrame,
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
     core_to_profile_data_df: Dict[str, pd.DataFrame],
     output_dir: str
 ) -> None:
-    non_overlapping_traces_df = get_non_overlapping_longest_duration_traces(traces_df)
-
     num_cores = len(core_to_profile_data_df)
     fig, axs = plt.subplots(num_cores, 1, figsize=(15, 4*num_cores))
     fig.suptitle("Instructions per Core with Trace Start/End Times", fontsize=14, fontweight='bold')
@@ -628,10 +578,10 @@ def plot_traces_start_end_times_and_perf_data(
     for i, (core_id, perf_df) in enumerate(core_to_profile_data_df.items()):
         ax = axs[i]
         ax.plot(perf_df['Time'], perf_df['Instructions'], label=f'Core {core_id} Instructions', color='blue', alpha=0.7)
-        for _, trace in non_overlapping_traces_df.iterrows():
-            trace_start = trace['start_time']
-            trace_end = trace['end_time']
-            trace_id = trace['trace_id']
+        for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
+            non_idle_intervals = sorted(non_idle_intervals, key=lambda x: list(x.keys())[0])
+            trace_start = non_idle_intervals[0][list(non_idle_intervals[0].keys())[0]] 
+            trace_end = non_idle_intervals[-1][list(non_idle_intervals[-1].keys())[0]]
             ax.axvline(x=trace_start, color='red', linestyle='--', alpha=0.5)
             ax.axvline(x=trace_end, color='blue', linestyle='--', alpha=0.5)
             ax.axvspan(trace_start, trace_end, alpha=0.3, color='green', label=f'Trace {trace_id}')
@@ -775,7 +725,7 @@ def main() -> None:
     plot_dir: str = args.plot_dir
     save_trace_profile_csvs: bool = args.save_trace_profile_csvs
     trace_profile_csv_dir: str = args.trace_profile_csv_dir
-    save_median_resource_usage_csvs: bool = args.save_median_resource_usages
+    save_median_resource_usage_csvs: bool = args.save_median_resource_usage_csvs
     
     if args.default_service_name:
         DEFAULT_SERVICE_NAME = args.default_service_name
@@ -811,47 +761,44 @@ def main() -> None:
         print(f"Core {core_id} Profile Data:")
         print(core_df.head())
     
-    # Get non-overlapping spans for time range reporting
-    non_overlapping_traces_df = get_non_overlapping_longest_duration_traces(container_jaeger_traces_df)
-    
-    if not non_overlapping_traces_df.empty:
-        edt = ZoneInfo("America/New_York")
-        min_perf_time = min([df['Time'].min() for df in cores_to_profile_data_df.values()])
-        max_perf_time = max([df['Time'].max() for df in cores_to_profile_data_df.values()])
+    edt = ZoneInfo("America/New_York")
+    min_perf_time = min([df['Time'].min() for df in cores_to_profile_data_df.values()])
+    max_perf_time = max([df['Time'].max() for df in cores_to_profile_data_df.values()])
+    min_trace_time = container_jaeger_traces_df['start_time'].min()
+    max_trace_time = container_jaeger_traces_df['end_time'].max()
+    min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
+    max_perf_time_dt = datetime.fromtimestamp(max_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
+    min_trace_time_dt = datetime.fromtimestamp(min_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
+    max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
+    print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
+    print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
 
-        min_trace_time = non_overlapping_traces_df['start_time'].min()
-        max_trace_time = non_overlapping_traces_df['end_time'].max()
-        min_perf_time_dt = datetime.fromtimestamp(min_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-        max_perf_time_dt = datetime.fromtimestamp(max_perf_time / 1e6, tz=timezone.utc).astimezone(edt)
-        min_trace_time_dt = datetime.fromtimestamp(min_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-        max_trace_time_dt = datetime.fromtimestamp(max_trace_time / 1e6, tz=timezone.utc).astimezone(edt)
-        print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
-        print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
-    else:
-        print("No valid non-overlapping traces found.")
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]] = get_trace_id_to_non_idle_intervals(container_jaeger_traces_df)
+    if not trace_id_to_non_idle_intervals:
+        print("No non-idle intervals found in traces.")
+        return
 
     print("\nPlotting aligned median resource usage...")
     plot_aligned_median_resource_usage(
-        container_jaeger_traces_df,
+        trace_id_to_non_idle_intervals,
         cores_to_profile_data_df,
         profile_data_dir,
         plot_dir,
         config,
         container_name,
-        service_name_for_traces,
         save_median_resource_usage_csvs
     )
 
     print("\nPlotting traces start/end times and performance data...")
     plot_traces_start_end_times_and_perf_data(
-        container_jaeger_traces_df,
+        trace_id_to_non_idle_intervals,
         cores_to_profile_data_df,
         plot_dir
     )
 
     print("\nGetting highest resource usage traces...")
     highest_resource_usage_traces = get_highest_resource_usage_traces(
-        container_jaeger_traces_df,
+        trace_id_to_non_idle_intervals,
         cores_to_profile_data_df,
         samples
     )
