@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, Any, List
-import math
+from typing import Dict, Any, List, Tuple
 from plot_profile_utils import load_profile_data, get_processed_df
 
 DEFAULT_SERVICE_NAME = "nginx-web-server"
@@ -56,6 +55,13 @@ def get_trace_id_to_non_idle_intervals(traces_df: pd.DataFrame) -> Dict[str, Lis
             if trace_id not in trace_id_to_non_idle_intervals:
                 trace_id_to_non_idle_intervals[trace_id] = []
             trace_id_to_non_idle_intervals[trace_id].append({start: end})
+    if not trace_id_to_non_idle_intervals:
+        print("No non idle intervals found in the trace data.")
+        return {}
+    
+    for trace_id, intervals in trace_id_to_non_idle_intervals.items():
+        sorted_intervals = sorted(intervals, key=lambda x: list(x.keys())[0])
+        trace_id_to_non_idle_intervals[trace_id] = sorted_intervals
 
     # merge intervals for each trace id
     for trace_id, intervals in trace_id_to_non_idle_intervals.items():
@@ -76,18 +82,7 @@ def get_trace_id_to_non_idle_intervals(traces_df: pd.DataFrame) -> Dict[str, Lis
 
     return trace_id_to_non_idle_intervals
 
-def plot_aligned_median_resource_usage(
-    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
-    core_to_profile_data_df: Dict[str, pd.DataFrame],
-    profile_data_dir: str,
-    output_dir: str, 
-    config: str, 
-    container_name: str,
-    save_median_resource_usage_csvs: bool
-) -> None:
-    print(f"Plotting aligned median resource usage for traces in {container_name} with config {config}")
-    print(f"Found {len(trace_id_to_non_idle_intervals)} traces with non idle intervals.")
-
+def get_median_non_idle_intervals(trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]]) -> int:
     # Calculate median number of non idle intervals across all traces
     non_idle_intervals_lens: List[int] = []
     for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
@@ -106,13 +101,12 @@ def plot_aligned_median_resource_usage(
     median_non_idle_intervals: int = int(np.median(non_idle_intervals_lens))
     print(f"Median number of non idle intervals: {median_non_idle_intervals}")
 
-    # filter out traces with non idle intervals not equal to median
-    trace_id_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items() if len(non_idle_intervals) == median_non_idle_intervals}
-    if not trace_id_to_non_idle_intervals:
-        print(f"No traces found with {median_non_idle_intervals} number of non idle intervals.")
-        print(f"Non idle interval lens: {non_idle_intervals_lens}")
-        return
-    
+    return median_non_idle_intervals
+
+def get_median_duration_information_for_non_idle_intervals(
+        trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
+        median_non_idle_intervals: int
+) -> Tuple[Dict[int, int], Dict[int, Dict[str, int]]]:
     # calculate the median duration for each non idle interval
     median_duration_per_non_idle_interval: Dict[int, int] = {}
     non_idle_duration_index_to_trace_id_non_idle_duration_map: Dict[int, Dict[str, int]] = {}
@@ -128,12 +122,19 @@ def plot_aligned_median_resource_usage(
             durations.append(duration)
         median_duration_per_non_idle_interval[i] = int(np.median(durations))
 
+    return median_duration_per_non_idle_interval, non_idle_duration_index_to_trace_id_non_idle_duration_map
+
+def get_selected_traces_based_non_median_non_idle_intervals(
+        median_duration_per_non_idle_interval: Dict[int, int],
+        non_idle_duration_index_to_trace_id_non_idle_duration_map: Dict[int, Dict[str, int]],
+        median_non_idle_intervals: int
+) -> set[str]:
     # select traces whose duration lies in median +- 1 sd for each non idle interval
     non_idle_interval_index_to_trace_ids: Dict[int, List[str]] = {}
     for i in range(median_non_idle_intervals):
         median_duration: int = median_duration_per_non_idle_interval[i]
         sd_duration: float = np.std(list(non_idle_duration_index_to_trace_id_non_idle_duration_map[i].values()))
-        lower_bound: int = int(median_duration - (sd_duration)) 
+        lower_bound: int = int(median_duration - (sd_duration))
         upper_bound: int = int(median_duration + (sd_duration))
         trace_ids_list: List[str] = []
         for trace_id, duration in non_idle_duration_index_to_trace_id_non_idle_duration_map[i].items():
@@ -151,12 +152,20 @@ def plot_aligned_median_resource_usage(
         print("No traces found that match the median duration +- 1 standard deviation criteria across all non idle intervals.")
         return
     
-    # filter out traces with trace ids not in selected_trace_ids
-    trace_id_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items()
-                                        if trace_id in selected_trace_ids}
-    if not trace_id_to_non_idle_intervals:
-        print("No traces found after filtering by median duration +- 1 standard deviation.")
-        return
+    return selected_trace_ids
+
+def plot_aligned_median_resource_usage(
+    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]],
+    median_non_idle_intervals: int,
+    median_duration_per_non_idle_interval: Dict[int, int],
+    core_to_profile_data_df: Dict[str, pd.DataFrame],
+    profile_data_dir: str,
+    output_dir: str, 
+    config: str, 
+    container_name: str,
+    save_median_resource_usage_csvs: bool
+) -> None:
+    print(f"Plotting aligned median resource usage for traces in {container_name} with config {config}")
     
     # process perf data
     normalised_perf_data_per_non_idle_interval: Dict[int, # non idle interval index
@@ -289,22 +298,17 @@ def plot_aligned_median_resource_usage(
     if len(core_to_profile_data_df) == 1:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
         llc_axs = axes[0]
-        instruction_ax = axes[1]
         llc_fig = fig
+        instruction_ax = axes[1]
         instruction_fig = fig
         llc_fig.suptitle(
-            f"LLC and Instructions data across Non-Idle Intervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            f"LLC and Instructions data across Non-Idle Intervals\nContainer: {container_name} | Config: {config}\n{median_non_idle_intervals} Non Idle Intervals | Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
             fontsize=14, fontweight='bold'
         )
     else:
         llc_fig, llc_axs = plt.subplots(figsize=(15, 10))
         llc_fig.suptitle(
-            f"LLC across Non-Idle INtervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
-            fontsize=14, fontweight='bold'
-        )
-        instruction_fig, instruction_ax = plt.subplots(figsize=(15, 10))
-        instruction_fig.suptitle(
-            f"Instructions Across Non-Idle Intervals\n{container_name} | {config}\n{median_non_idle_intervals} Non Idle Intervals\tTotal Non Idle Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            f"LLC across Non-Idle Intervals\nContainer: {container_name} | Config: {config}\n{median_non_idle_intervals} Non Idle Intervals | Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
             fontsize=14, fontweight='bold'
         )
 
@@ -331,6 +335,8 @@ def plot_aligned_median_resource_usage(
         llc_axs.axvline(x=break_point, color='gray', linestyle='--', alpha=1)
     llc_axs.set_xlabel("Time (μs)")
     llc_axs.set_ylabel("LLC Loads/Misses")
+    llc_axs.set_xlim(0, cumulative_time + 10)
+    llc_axs.set_xticks(np.arange(0, cumulative_time + 10, step=100))
     llc_axs.set_title(f"LLC Loads and Misses across Non-Idle Intervals\n{container_name} | {config}")
     llc_axs.legend()
     llc_axs.grid(True, linestyle='--', alpha=0.3)
@@ -349,43 +355,90 @@ def plot_aligned_median_resource_usage(
         print(f"LLC data saved to {llc_data_csv_file_name} in {profile_data_dir}")
 
     # Plot instructions data
-    cumulative_time = 0
-    legend_items = []
-    colors = plt.cm.tab10(np.linspace(0, 1, len(core_to_profile_data_df)))
-    instructions_data = []
-    for idx in range(median_non_idle_intervals):
-        time_points = non_idle_interval_idx_to_time_points[idx]
-        core_id_to_instructions = non_idle_interval_idx_to_core_id_to_median_instructions[idx]
-        adjusted_time_points = time_points + cumulative_time
-        for core_idx, (core_id, instructions) in enumerate(core_id_to_instructions.items()):
-            if any(instructions):
-                scatter = instruction_ax.scatter(
-                    adjusted_time_points, 
-                    instructions, 
-                    color=colors[core_idx], 
-                    s=10,
-                    alpha=0.7, 
-                    label=f"Core {core_id}" if idx == 0 else ""
-                )
-                if idx == 0:
-                    legend_items.append(scatter)
-            for i, instruction in enumerate(instructions):
-                instructions_data.append({
-                    'Time': adjusted_time_points[i],
-                    'Core ID': core_id,
-                    'Instructions': instruction
-                })
-        if idx < median_non_idle_intervals - 1:
-            cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
-            instruction_ax.axvline(x=cumulative_time, color='r', linestyle='--', alpha=1)
-    
-    instruction_ax.set_xlabel('Time (μs)', fontsize=10)
-    instruction_ax.set_ylabel('Instructions', fontsize=10)
-    instruction_ax.set_xlim(0, cumulative_time + 10)
-    instruction_ax.set_xticks(np.arange(0, cumulative_time + 10, step=10))
-    instruction_ax.set_ylim(0, max(max(instructions) for instructions in core_id_to_instructions.values()) * 1.1)
-    instruction_ax.grid(True, linestyle='--', alpha=0.3)
-    instruction_ax.legend(loc='upper right')
+    if len(core_to_profile_data_df) == 1:
+        cumulative_time = 0
+        legend_items = []
+        colors = plt.cm.tab10(np.linspace(0, 1, len(core_to_profile_data_df)))
+        instructions_data = []
+        for idx in range(median_non_idle_intervals):
+            time_points = non_idle_interval_idx_to_time_points[idx]
+            core_id_to_instructions = non_idle_interval_idx_to_core_id_to_median_instructions[idx]
+            adjusted_time_points = time_points + cumulative_time
+            for core_idx, (core_id, instructions) in enumerate(core_id_to_instructions.items()):
+                if any(instructions):
+                    scatter = instruction_ax.scatter(
+                        adjusted_time_points, 
+                        instructions, 
+                        color=colors[core_idx], 
+                        s=10,
+                        alpha=0.7, 
+                        label=f"Core {core_id}" if idx == 0 else ""
+                    )
+                    if idx == 0:
+                        legend_items.append(scatter)
+                for i, instruction in enumerate(instructions):
+                    instructions_data.append({
+                        'Time': adjusted_time_points[i],
+                        'Core ID': core_id,
+                        'Instructions': instruction
+                    })
+            if idx < median_non_idle_intervals - 1:
+                cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
+                instruction_ax.axvline(x=cumulative_time, color='r', linestyle='--', alpha=1)
+        
+        instruction_ax.set_xlabel('Time (μs)', fontsize=10)
+        instruction_ax.set_ylabel('Instructions', fontsize=10)
+        instruction_ax.set_xlim(0, cumulative_time + 10)
+        instruction_ax.set_xticks(np.arange(0, cumulative_time + 10, step=100))
+        instruction_ax.grid(True, linestyle='--', alpha=0.3)
+        instruction_ax.legend(loc='upper right')
+
+        llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        llc_instructions_png_file_name = f"llc_instructions_{container_name}_{config}.png"
+        llc_fig.savefig(os.path.join(output_dir, llc_instructions_png_file_name))
+        plt.close(llc_fig)
+        print(f"Aligned median resource usage plot saved as {llc_instructions_png_file_name} in {output_dir}")
+    else:
+        instruction_fig, instruction_axes = plt.subplots(len(core_to_profile_data_df), 1, figsize=(15, 10))
+        instruction_fig.suptitle(
+            f"Instructions across Non-Idle Intervals\nContainer: {container_name} | Config: {config}\n{median_non_idle_intervals} Non Idle Intervals | Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
+            fontsize=14, fontweight='bold'
+        )
+        for i, (core_id, core_id_to_instructions) in enumerate(non_idle_interval_idx_to_core_id_to_median_instructions.items()):
+            core_ax = instruction_axes[i]
+            cumulative_time = 0
+            for idx in range(median_non_idle_intervals):
+                time_points = non_idle_interval_idx_to_time_points[idx]
+                instructions = core_id_to_instructions[idx]
+                adjusted_time_points = time_points + cumulative_time
+                core_ax.scatter(adjusted_time_points, instructions, color='blue', s=10, alpha=0.7)
+                for i, instruction in enumerate(instructions):
+                    instructions_data.append({
+                        'Time': adjusted_time_points[i],
+                        'Core ID': core_id,
+                        'Instructions': instruction
+                    })
+                if idx < median_non_idle_intervals - 1:
+                    cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
+                    core_ax.axvline(x=cumulative_time, color='r', linestyle='--', alpha=1)
+            core_ax.set_xlabel('Time (μs)', fontsize=10)
+            core_ax.set_ylabel('Instructions', fontsize=10)
+            core_ax.set_xlim(0, cumulative_time + 10)
+            core_ax.set_xticks(np.arange(0, cumulative_time + 10, step=100))
+            core_ax.set_ylim(0, max(max(instructions) for instructions in core_id_to_instructions.values()) * 1.1)
+            core_ax.grid(True, linestyle='--', alpha=0.3)
+            core_ax.legend(loc='upper right')
+            core_ax.set_title(f"Core {core_id} Instructions", fontsize=12, fontweight='bold')
+
+            llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+            llc_png_file_name = f"llc_{container_name}_{config}.png"
+            llc_fig.savefig(os.path.join(output_dir, llc_png_file_name))
+            plt.close(llc_fig)
+            instruction_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+            instruction_png_file_name = f"instructions_{container_name}_{config}.png"
+            instruction_fig.savefig(os.path.join(output_dir, instruction_png_file_name))
+            plt.close(instruction_fig)
+            print(f"Aligned median resource usage plots saved as {llc_png_file_name} and {instruction_png_file_name} in {output_dir}")
 
     if save_median_resource_usage_csvs:
         # Save the instructions data to CSV file
@@ -393,23 +446,6 @@ def plot_aligned_median_resource_usage(
         instructions_data_csv_file_name = f"instructions_data_{container_name}_{config}.csv"
         instructions_data_df.to_csv(os.path.join(profile_data_dir, instructions_data_csv_file_name), index=False)
         print(f"Instructions data saved to {instructions_data_csv_file_name} in {profile_data_dir}")
-
-    if len(core_to_profile_data_df) == 1:
-        llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        llc_instructions_png_file_name = f"llc_instructions_{container_name}_{config}.png"
-        llc_fig.savefig(os.path.join(output_dir, llc_instructions_png_file_name))
-        plt.close(llc_fig)
-        print(f"Aligned median resource usage plot saved as {llc_instructions_png_file_name} in {output_dir}")
-    else:
-        llc_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        llc_png_file_name = f"llc_{container_name}_{config}.png"
-        llc_fig.savefig(os.path.join(output_dir, llc_png_file_name))
-        plt.close(llc_fig)
-        instruction_fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        instruction_png_file_name = f"instructions_{container_name}_{config}.png"
-        instruction_fig.savefig(os.path.join(output_dir, instruction_png_file_name))
-        plt.close(instruction_fig)
-        print(f"Aligned median resource usage plots saved as {llc_png_file_name} and {instruction_png_file_name} in {output_dir}")
     
     print(f"Number of traces analysed: {len(trace_id_to_non_idle_intervals)}")
 
@@ -424,8 +460,8 @@ def get_highest_resource_usage_traces(
     
     for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
         non_idle_intervals = sorted(non_idle_intervals, key=lambda x: list(x.keys())[0])
-        trace_start = non_idle_intervals[0][list(non_idle_intervals[0].keys())[0]] # get the start of the first interval
-        trace_end = non_idle_intervals[-1][list(non_idle_intervals[-1].keys())[0]] # get the end of the last interval
+        trace_start = list(non_idle_intervals[0].keys())[0]
+        trace_end = list(non_idle_intervals[-1].values())[0]
         duration = trace_end - trace_start
         if trace_end < min_perf_time or trace_start > max_perf_time:
             continue
@@ -459,6 +495,11 @@ def get_highest_resource_usage_traces(
             if instructions_count > highest_instructions:
                 highest_instructions = instructions_count
                 curr_core_with_highest_instructions = core_no
+                
+        if curr_core_with_highest_instructions is None:
+            print(f"No instructions data found for trace {trace_id}.")
+            continue
+
         total_resource_usage = non_zero_llc_loads + non_zero_llc_misses + non_zero_instructions
         
         trace_stats.append({
@@ -580,8 +621,8 @@ def plot_traces_start_end_times_and_perf_data(
         ax.plot(perf_df['Time'], perf_df['Instructions'], label=f'Core {core_id} Instructions', color='blue', alpha=0.7)
         for trace_id, non_idle_intervals in trace_id_to_non_idle_intervals.items():
             non_idle_intervals = sorted(non_idle_intervals, key=lambda x: list(x.keys())[0])
-            trace_start = non_idle_intervals[0][list(non_idle_intervals[0].keys())[0]] 
-            trace_end = non_idle_intervals[-1][list(non_idle_intervals[-1].keys())[0]]
+            trace_start = list(non_idle_intervals[0].keys())[0]
+            trace_end = list(non_idle_intervals[-1].values())[0]
             ax.axvline(x=trace_start, color='red', linestyle='--', alpha=0.5)
             ax.axvline(x=trace_end, color='blue', linestyle='--', alpha=0.5)
             ax.axvspan(trace_start, trace_end, alpha=0.3, color='green', label=f'Trace {trace_id}')
@@ -602,11 +643,9 @@ def plot_profile_with_traces(
     output_dir: str,
     num_samples: int,
     config: str,
-    container_name: str,
-    service_name_for_traces: str
+    container_name: str
 ) -> None:
     num_plots = 0
-
     print(f"Plotting top {min(num_samples, len(trace_stats_df))} traces by resource usage")
 
     for i, trace in trace_stats_df.iterrows():
@@ -615,9 +654,6 @@ def plot_profile_with_traces(
         trace_id = trace["trace_id"]
         trace_start = trace["start_time"]
         trace_end = trace["end_time"]
-        non_zero_llc_loads = trace["non_zero_llc_loads"]
-        non_zero_llc_misses = trace["non_zero_llc_misses"]
-        non_zero_instructions = trace["non_zero_instructions"]
         total_resource_usage = trace["total_resource_usage"]
         core_with_highest_instructions = trace["core_with_highest_instructions"]
 
@@ -680,26 +716,29 @@ def plot_profile_with_traces(
         config_parts = config.split("_")
         for part in config_parts:
             if part.startswith("cp"):
-                cache_partitions_str = part
+                cache_partitions_str = part[2:]
                 break
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
         fig.suptitle(
-            f"{container_name} | {service_name_for_traces} | {cache_partitions_str}\n"
-            f"Trace ID: {trace_id} | Resource Usage: LLC-loads={non_zero_llc_loads}, "
-            f"LLC-misses={non_zero_llc_misses}, Instructions={non_zero_instructions}", 
+            f"Container: {container_name} | Cache Partitons: {cache_partitions_str}",
             fontsize=14, fontweight='bold'
         )
 
-        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, color="blue", label="LLC Loads")
-        axs[0].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, color="red", label="LLC Misses")
-        axs[0].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
+        min_time = zoomed_plot_profile_df["Time"].min()
+        zoomed_plot_profile_df["NormalizedTime"] = zoomed_plot_profile_df["Time"] - min_time
+        normalized_trace_start = trace_start - min_time
+        normalized_trace_end = trace_end - min_time
+
+        axs[0].scatter(zoomed_plot_profile_df["NormalizedTime"], zoomed_plot_profile_df['LLC-loads'], s=10, alpha=0.7, color="blue", label="LLC Loads")
+        axs[0].scatter(zoomed_plot_profile_df["NormalizedTime"], zoomed_plot_profile_df['LLC-misses'], s=10, alpha=0.7, color="red", label="LLC Misses")
+        axs[0].axvspan(normalized_trace_start, normalized_trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[0].set_title("LLC Loads and LLC Misses (Zoomed In)")
         axs[0].set_xlabel("Time (microseconds)")
         axs[0].set_ylabel("Count")
         axs[0].legend()
 
-        axs[1].scatter(zoomed_plot_profile_df["Time"], zoomed_plot_profile_df['Instructions'], s=10, alpha=0.7, color="green", label="Instructions")
-        axs[1].axvspan(trace_start, trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
+        axs[1].scatter(zoomed_plot_profile_df["NormalizedTime"], zoomed_plot_profile_df['Instructions'], s=10, alpha=0.7, color="green", label="Instructions")
+        axs[1].axvspan(normalized_trace_start, normalized_trace_end, alpha=0.2, color=(1, 0.7, 0.7), label="Trace Window")
         axs[1].set_title("Instructions from Core {core_with_highest_instructions} (Zoomed In)")
         axs[1].set_xlabel("Time (microseconds)")
         axs[1].set_ylabel("Instruction (Delta) Count")
@@ -773,14 +812,42 @@ def main() -> None:
     print(f"Performance data time range [{min_perf_time_dt} - {max_perf_time_dt}] aka [{min_perf_time} - {max_perf_time}]")
     print(f"Trace data time range [{min_trace_time_dt} - {max_trace_time_dt}] aka [{min_trace_time} - {max_trace_time}]")
 
-    trace_id_to_non_idle_intervals: Dict[str, List[Dict[int, int]]] = get_trace_id_to_non_idle_intervals(container_jaeger_traces_df)
-    if not trace_id_to_non_idle_intervals:
+    all_trace_ids_to_non_idle_intervals: Dict[str, List[Dict[int, int]]] = get_trace_id_to_non_idle_intervals(container_jaeger_traces_df)
+    if not all_trace_ids_to_non_idle_intervals:
         print("No non-idle intervals found in traces.")
+        return
+    
+    print("\nPlotting traces start/end times and performance data...")
+    plot_traces_start_end_times_and_perf_data(
+        all_trace_ids_to_non_idle_intervals,
+        cores_to_profile_data_df,
+        plot_dir
+    )
+    
+    median_non_idle_intervals = get_median_non_idle_intervals(all_trace_ids_to_non_idle_intervals)
+    # filter out traces with non idle intervals not equal to median
+    filtered_trace_ids_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in all_trace_ids_to_non_idle_intervals.items() if len(non_idle_intervals) == median_non_idle_intervals}
+    if not filtered_trace_ids_to_non_idle_intervals:
+        print(f"No traces found with {median_non_idle_intervals} number of non idle intervals.")
+        return
+    
+    median_duration_per_non_idle_interval, non_idle_duration_index_to_trace_id_non_idle_duration_map = get_median_duration_information_for_non_idle_intervals(filtered_trace_ids_to_non_idle_intervals, median_non_idle_intervals)
+    selected_trace_ids = get_selected_traces_based_non_median_non_idle_intervals(
+        median_duration_per_non_idle_interval,
+        non_idle_duration_index_to_trace_id_non_idle_duration_map,
+        median_non_idle_intervals
+    )
+    # filter out traces with trace ids not in selected_trace_ids
+    final_trace_ids_to_non_idle_intervals = {trace_id: non_idle_intervals for trace_id, non_idle_intervals in filtered_trace_ids_to_non_idle_intervals.items() if trace_id in selected_trace_ids}
+    if not filtered_trace_ids_to_non_idle_intervals:
+        print("No traces found after filtering by median duration +- 1 standard deviation.")
         return
 
     print("\nPlotting aligned median resource usage...")
     plot_aligned_median_resource_usage(
-        trace_id_to_non_idle_intervals,
+        final_trace_ids_to_non_idle_intervals,
+        median_non_idle_intervals,
+        median_duration_per_non_idle_interval,
         cores_to_profile_data_df,
         profile_data_dir,
         plot_dir,
@@ -789,16 +856,9 @@ def main() -> None:
         save_median_resource_usage_csvs
     )
 
-    print("\nPlotting traces start/end times and performance data...")
-    plot_traces_start_end_times_and_perf_data(
-        trace_id_to_non_idle_intervals,
-        cores_to_profile_data_df,
-        plot_dir
-    )
-
     print("\nGetting highest resource usage traces...")
     highest_resource_usage_traces = get_highest_resource_usage_traces(
-        trace_id_to_non_idle_intervals,
+        final_trace_ids_to_non_idle_intervals,
         cores_to_profile_data_df,
         samples
     )
@@ -813,8 +873,7 @@ def main() -> None:
         plot_dir, 
         samples, 
         config, 
-        container_name, 
-        service_name_for_traces
+        container_name
     )
 
     if save_trace_profile_csvs:
