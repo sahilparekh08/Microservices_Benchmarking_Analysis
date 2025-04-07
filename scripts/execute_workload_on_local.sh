@@ -69,8 +69,8 @@ if [[ $THREADS -eq 0 || $CLIENTS -eq 0 || $DURATION -eq 0 || $RATE -eq 0 ]]; the
     usage
 fi
 
-echo "sleep 1"
-sleep 1
+echo "sleep 3"
+sleep 3
 
 if [[ "$(basename "$DOCKER_COMPOSE_DIR")" == "socialNetwork" ]]; then
     echo -e "\nWorkload started at $(date)\n"

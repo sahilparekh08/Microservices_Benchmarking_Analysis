@@ -317,6 +317,7 @@ def plot_aligned_median_resource_usage(
     llc_loads_data = []
     llc_misses_data = []
     break_points = []
+    x_lim_end = 0
     for idx in range(median_non_idle_intervals):
         time_points = non_idle_interval_idx_to_time_points[idx]
         median_llc_loads = non_idle_interval_idx_to_median_llc_loads[idx]
@@ -325,6 +326,7 @@ def plot_aligned_median_resource_usage(
         all_time_points.extend(adjusted_time_points)
         llc_loads_data.extend(median_llc_loads)
         llc_misses_data.extend(median_llc_misses)
+        x_lim_end = adjusted_time_points[-1] + 10
         if idx < median_non_idle_intervals - 1:
             cumulative_time = adjusted_time_points[-1] + 10
             break_points.append(cumulative_time)
@@ -335,8 +337,8 @@ def plot_aligned_median_resource_usage(
         llc_axs.axvline(x=break_point, color='gray', linestyle='--', alpha=1)
     llc_axs.set_xlabel("Time (μs)")
     llc_axs.set_ylabel("LLC Loads/Misses")
-    llc_axs.set_xlim(0, cumulative_time + 10)
-    llc_axs.set_xticks(np.arange(0, cumulative_time + 10, step=100))
+    llc_axs.set_xlim(0, x_lim_end)
+    llc_axs.set_xticks(np.arange(0, x_lim_end, step=100))
     llc_axs.set_title(f"LLC Loads and Misses across Non-Idle Intervals\n{container_name} | {config}")
     llc_axs.legend()
     llc_axs.grid(True, linestyle='--', alpha=0.3)
@@ -357,39 +359,33 @@ def plot_aligned_median_resource_usage(
     # Plot instructions data
     if len(core_to_profile_data_df) == 1:
         cumulative_time = 0
-        legend_items = []
-        colors = plt.cm.tab10(np.linspace(0, 1, len(core_to_profile_data_df)))
+        x_lim_end = 0
+        all_time_points = []
         instructions_data = []
+        break_points = []
+        
         for idx in range(median_non_idle_intervals):
             time_points = non_idle_interval_idx_to_time_points[idx]
             core_id_to_instructions = non_idle_interval_idx_to_core_id_to_median_instructions[idx]
             adjusted_time_points = time_points + cumulative_time
-            for core_idx, (core_id, instructions) in enumerate(core_id_to_instructions.items()):
-                if any(instructions):
-                    scatter = instruction_ax.scatter(
-                        adjusted_time_points, 
-                        instructions, 
-                        color=colors[core_idx], 
-                        s=10,
-                        alpha=0.7, 
-                        label=f"Core {core_id}" if idx == 0 else ""
-                    )
-                    if idx == 0:
-                        legend_items.append(scatter)
-                for i, instruction in enumerate(instructions):
-                    instructions_data.append({
-                        'Time': adjusted_time_points[i],
-                        'Core ID': core_id,
-                        'Instructions': instruction
-                    })
+            all_time_points.extend(adjusted_time_points)
+            for core_id, instructions in core_id_to_instructions.items():
+                if not instructions:
+                    continue
+                instructions_data.extend(instructions)
+                x_lim_end = adjusted_time_points[-1] + 10
             if idx < median_non_idle_intervals - 1:
-                cumulative_time = adjusted_time_points[-1] + 10 # Add a small gap between intervals
-                instruction_ax.axvline(x=cumulative_time, color='r', linestyle='--', alpha=1)
-        
+                cumulative_time = adjusted_time_points[-1] + 10
+                break_points.append(cumulative_time)
+
+        instruction_ax.scatter(all_time_points, instructions_data, color='green', marker='o', s=10, label='Instructions', alpha=0.7)
+        for break_point in break_points:
+            instruction_ax.axvline(x=break_point, color='gray', linestyle='--', alpha=1)
+        instruction_ax.set_title(f"Instructions across Non-Idle Intervals\n{container_name} | {config}")
         instruction_ax.set_xlabel('Time (μs)', fontsize=10)
         instruction_ax.set_ylabel('Instructions', fontsize=10)
-        instruction_ax.set_xlim(0, cumulative_time + 10)
-        instruction_ax.set_xticks(np.arange(0, cumulative_time + 10, step=100))
+        instruction_ax.set_xlim(0, x_lim_end)
+        instruction_ax.set_xticks(np.arange(0, x_lim_end, step=100))
         instruction_ax.grid(True, linestyle='--', alpha=0.3)
         instruction_ax.legend(loc='upper right')
 
@@ -399,6 +395,7 @@ def plot_aligned_median_resource_usage(
         plt.close(llc_fig)
         print(f"Aligned median resource usage plot saved as {llc_instructions_png_file_name} in {output_dir}")
     else:
+        # TODO: revisit, might be buggy
         instruction_fig, instruction_axes = plt.subplots(len(core_to_profile_data_df), 1, figsize=(15, 10))
         instruction_fig.suptitle(
             f"Instructions across Non-Idle Intervals\nContainer: {container_name} | Config: {config}\n{median_non_idle_intervals} Non Idle Intervals | Median Duration: {total_median_duration_across_non_idle_intervals:.3f} μs",
@@ -637,7 +634,7 @@ def plot_traces_start_end_times_and_perf_data(
     plt.close()
     print(f"Plot saved to {plot_path}")
 
-def plot_profile_with_traces(
+def plot_highest_resource_usage_traces(
     trace_stats_df: pd.DataFrame,
     cores_to_profile_data_df: Dict[str, pd.DataFrame],
     output_dir: str,
@@ -719,8 +716,9 @@ def plot_profile_with_traces(
                 cache_partitions_str = part[2:]
                 break
         fig, axs = plt.subplots(2, 1, figsize=(15, 10))
+        trace_duration = trace_end - trace_start
         fig.suptitle(
-            f"Container: {container_name} | Cache Partitons: {cache_partitions_str}",
+            f"Container: {container_name} | Cache Partitons: {cache_partitions_str}\nTotal Trace Duration: {trace_duration} μs ",
             fontsize=14, fontweight='bold'
         )
 
@@ -867,7 +865,7 @@ def main() -> None:
         return
 
     print("\nPlotting profile for highest resource usage traces...")
-    plot_profile_with_traces(
+    plot_highest_resource_usage_traces(
         highest_resource_usage_traces, 
         cores_to_profile_data_df, 
         plot_dir, 
