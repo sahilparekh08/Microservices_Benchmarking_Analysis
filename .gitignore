@@ -3,6 +3,7 @@ data/
 __pycache__/
 *.txt
 *.log
-*.old
 *.bin
 *.o
+*.csv
+non_idle_median_durations/
