@@ -24,6 +24,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--save-trace-profile-csvs", type=bool, default=False, help="Save trace profile CSVs")
     parser.add_argument("--trace-profile-csv-dir", type=str, help="Output directory for CSV data")
     parser.add_argument("--save-median-resource-usage-csvs", type=bool, default=False, help="Save median plot CSVs")
+    parser.add_argument("--median-durations-data-dir", type=str, help="Output directory for median durations")
 
     return parser.parse_args()
 
@@ -163,7 +164,8 @@ def plot_aligned_median_resource_usage(
     output_dir: str, 
     config: str, 
     container_name: str,
-    save_median_resource_usage_csvs: bool
+    save_median_resource_usage_csvs: bool,
+    median_durations_data_dir: str
 ) -> None:
     print(f"Plotting aligned median resource usage for traces in {container_name} with config {config}")
     
@@ -289,6 +291,22 @@ def plot_aligned_median_resource_usage(
         non_idle_interval_idx_to_core_id_to_median_instructions[non_idle_interval_idx] = core_id_to_instructions
 
     total_median_duration_across_non_idle_intervals: float = sum(median_duration_per_non_idle_interval.values())
+
+    if median_durations_data_dir:
+        os.makedirs(median_durations_data_dir, exist_ok=True)
+        container_non_idle_median_durations_csv_file_name = os.path.join(median_durations_data_dir, f"{container_name}.csv")
+
+        cache_partitions_str = ""
+        config_parts = config.split("_")
+        for part in config_parts:
+            if part.startswith("cp"):
+                cache_partitions_str = part[2:]
+                break
+        if not os.path.exists(container_non_idle_median_durations_csv_file_name):
+            with open(container_non_idle_median_durations_csv_file_name, 'w') as f:
+                f.write("cache_partitions,non_idle_median_duration\n")
+        with open(container_non_idle_median_durations_csv_file_name, 'a') as f:
+            f.write(f"{cache_partitions_str},{total_median_duration_across_non_idle_intervals}\n")
 
     # Plot the the non idle intervals side by side in one plot for llc loads and misses
     llc_fig: plt.Figure
@@ -763,6 +781,7 @@ def main() -> None:
     save_trace_profile_csvs: bool = args.save_trace_profile_csvs
     trace_profile_csv_dir: str = args.trace_profile_csv_dir
     save_median_resource_usage_csvs: bool = args.save_median_resource_usage_csvs
+    median_durations_data_dir: str = args.median_durations_data_dir
     
     if args.default_service_name:
         DEFAULT_SERVICE_NAME = args.default_service_name
@@ -778,7 +797,8 @@ def main() -> None:
     print(f"Plot directory: {plot_dir}")
     print(f"Save trace profile CSVs: {save_trace_profile_csvs}")
     print(f"Trace profile CSV directory: {trace_profile_csv_dir}")
-    print(f"Default service name: {DEFAULT_SERVICE_NAME}")
+    print(f"Save median resource usage CSVs: {save_median_resource_usage_csvs}")
+    print(f"Median durations data directory: {median_durations_data_dir}")
     
     container_jaeger_traces_df: pd.DataFrame = load_traces_data(
         traces_data_dir, service_name_for_traces, test_name, config, container_name)
@@ -851,7 +871,8 @@ def main() -> None:
         plot_dir,
         config,
         container_name,
-        save_median_resource_usage_csvs
+        save_median_resource_usage_csvs,
+        median_durations_data_dir
     )
 
     print("\nGetting highest resource usage traces...")

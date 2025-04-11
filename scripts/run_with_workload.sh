@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# TODO: 
-# runtime for 100, 1000 requests on same amount of cores
-# check on the workload gen params
-
 CURR_USER="$(whoami)"
 
 if [ "$EUID" -ne 0 ]; then
@@ -41,8 +37,6 @@ usage() {
 }
 
 make_dirs() {
-    curr_time=$1
-    
     echo "mkdir -p $DATA_DIR"
     mkdir -p $DATA_DIR
 
@@ -75,6 +69,12 @@ make_dirs() {
 
     echo "mkdir -p $LOG_DIR"
     mkdir -p $LOG_DIR
+
+    echo "mkdir -p $MEDIAN_DURATIONS_BASE_DIR"
+    mkdir -p $MEDIAN_DURATIONS_BASE_DIR
+
+    echo "mkdir -p $MEDIAN_DURATIONS_DATA_DIR"
+    mkdir -p $MEDIAN_DURATIONS_DATA_DIR
 }
 
 cleanup() {
@@ -155,13 +155,19 @@ fi
 curr_time=$(date +"%Y-%m-%d_%H-%M-%S")
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-DATA_DIR="$(realpath "$SCRIPTS_DIR/../data")"
+BASE_DIR="$(realpath "$SCRIPTS_DIR/..")"
+DATA_DIR="$BASE_DIR/data"
 LOG_DIR="$DATA_DIR/workload/$curr_time/logs"
+MEDIAN_DURATIONS_BASE_DIR="$BASE_DIR/non_idle_median_durations"
+MEDIAN_DURATIONS_DATA_DIR="$BASE_DIR/non_idle_median_durations/data"
 
 echo "Started at: $curr_time"
 echo -e "\nSCRIPTS_DIR: $SCRIPTS_DIR"
+echo "BASE_DIR: $BASE_DIR"
 echo "DATA_DIR: $DATA_DIR"
 echo "LOG_DIR: $LOG_DIR"
+echo "MEDIAN_DURATIONS_BASE_DIR: $MEDIAN_DURATIONS_BASE_DIR"
+echo "MEDIAN_DURATIONS_DATA_DIR: $MEDIAN_DURATIONS_DATA_DIR"
 
 echo -e "\nCONTAINER_NAME: $CONTAINER_NAME"
 echo "SERVICE_NAME_FOR_TRACES: $SERVICE_NAME_FOR_TRACES"
@@ -171,7 +177,7 @@ echo "DOCKER_COMPOSE_DIR: $DOCKER_COMPOSE_DIR"
 echo "CORE_TO_PIN_PROFILER: $CORE_TO_PIN_PROFILER"
 echo -e "TARGET_CORES: $TARGET_CORES\n"
 
-make_dirs $curr_time
+make_dirs
 
 DATA_DIR_PARENT="$DATA_DIR"
 DATA_DIR="$DATA_DIR/workload/$curr_time"
@@ -248,7 +254,7 @@ echo -e "--------------------------------------------------\n"
 
 echo "--------------------------------------------------"
 echo "Running plot_data.sh"
-$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" || {
+$SCRIPTS_DIR/plot_data.sh --test-name "$TEST_NAME" --container-name "$CONTAINER_NAME" --service-name-for-traces "$SERVICE_NAME_FOR_TRACES" --config "$CONFIG" --data-dir "$DATA_DIR" --median-durations-data-dir "$MEDIAN_DURATIONS_DATA_DIR" || {
     echo "Failed to plot data"
     exit 1
 }
