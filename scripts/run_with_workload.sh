@@ -19,6 +19,7 @@ SAVE_TRACES_JSON=false
 DATA_DIR_PARENT=""
 CORE_TO_PIN_PROFILER=""
 TARGET_CORES=""
+COS=""
 
 usage() {    
     echo "Usage: $0 [args]"
@@ -30,6 +31,7 @@ usage() {
     echo "  --docker-compose-dir \"~/workspace/DeathStarBench/socialNetwork\""
     echo "  --core-to-pin-profiler 5"
     echo "  --cores-to-profile 6,7"
+    echo "  --cos 3"
     echo "Optional args:"
     echo "  --jaeger-traces-limit 100"
     echo "  --save-traces-json"
@@ -91,6 +93,9 @@ cleanup() {
     echo -e "\nchown -R $CURR_USER:$CURR_USER $DATA_DIR_PARENT"
     chown -R $CURR_USER:$CURR_USER $DATA_DIR_PARENT
 
+    echo -e "chown -R $CURR_USER:$CURR_USER $MEDIAN_DURATIONS_BASE_DIR"
+    chown -R $CURR_USER:$CURR_USER $MEDIAN_DURATIONS_BASE_DIR
+
     echo -e "\nFinished at: $(date +"%Y-%m-%d_%H-%M-%S")"
 }
 
@@ -126,6 +131,10 @@ while [[ $# -gt 0 ]]; do
             TARGET_CORES="$2"
             shift 2
             ;;
+        --cos)
+            COS="$2"
+            shift 2
+            ;;
         --jaeger-traces-limit)
             JAEGER_TRACES_LIMIT="$2"
             shift 2
@@ -148,7 +157,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" || -z "$CORE_TO_PIN_PROFILER" || -z "$TARGET_CORES" ]]; then
+if [[ -z "$CONTAINER_NAME" || -z "$SERVICE_NAME_FOR_TRACES" || -z "$TEST_NAME" || -z "$CONFIG" || -z "$DOCKER_COMPOSE_DIR" || -z "$CORE_TO_PIN_PROFILER" || -z "$TARGET_CORES" || -z "$COS" ]]; then
     usage
 fi
 
@@ -187,9 +196,25 @@ echo "chmod +x $SCRIPTS_DIR/*"
 chmod +x $SCRIPTS_DIR/*
 
 echo -e "\n--------------------------------------------------"
-echo "Running deathstar_clean_start.sh"
-$SCRIPTS_DIR/deathstar_clean_start.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --log-dir "$LOG_DIR" || {
-    echo "Failed to bring up docker compose"
+echo "Running deathstar_stop_containers.sh"
+$SCRIPTS_DIR/deathstar_stop_containers.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" || {
+    echo "Failed to stop containers"
+    exit 1
+}
+echo -e "--------------------------------------------------\n"
+
+echo "--------------------------------------------------"
+echo "Running clear_l3_partitions.sh"
+$SCRIPTS_DIR/clear_l3_partitions.sh --cos "$COS" --log-dir "$LOG_DIR" || {
+    echo "Failed to start containers"
+    exit 1
+}
+echo -e "--------------------------------------------------\n"
+
+echo "--------------------------------------------------"
+echo "Running deathstar_start_containers.sh"
+$SCRIPTS_DIR/deathstar_start_containers.sh --docker-compose-dir "$DOCKER_COMPOSE_DIR" --log-dir "$LOG_DIR" || {
+    echo "Failed to start containers"
     exit 1
 }
 echo -e "--------------------------------------------------\n"

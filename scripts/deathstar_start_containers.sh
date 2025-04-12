@@ -30,15 +30,6 @@ if [[ ! -d "$DOCKER_COMPOSE_DIR" ]]; then
 	exit 1
 fi
 
-echo "(cd \"$DOCKER_COMPOSE_DIR\" && docker compose down)"
-(cd "$DOCKER_COMPOSE_DIR" && docker compose down) || {
-	echo "Failed to bring down docker compose"
-	exit 1
-}
-
-echo -e "\ndocker volume prune -f"
-docker volume prune -f
-
 echo -e "\n(cd \"$DOCKER_COMPOSE_DIR\" && docker compose up -d)"
 (cd "$DOCKER_COMPOSE_DIR" && docker compose up -d) || {
 	echo "Failed to bring up docker compose"

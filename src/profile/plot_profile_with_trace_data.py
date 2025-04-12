@@ -162,6 +162,7 @@ def plot_aligned_median_resource_usage(
     core_to_profile_data_df: Dict[str, pd.DataFrame],
     profile_data_dir: str,
     output_dir: str, 
+    test_name: str,
     config: str, 
     container_name: str,
     save_median_resource_usage_csvs: bool,
@@ -294,7 +295,9 @@ def plot_aligned_median_resource_usage(
 
     if median_durations_data_dir:
         os.makedirs(median_durations_data_dir, exist_ok=True)
-        container_non_idle_median_durations_csv_file_name = os.path.join(median_durations_data_dir, f"{container_name}.csv")
+        median_durations_test_dir = os.path.join(median_durations_data_dir, test_name)
+        os.makedirs(median_durations_test_dir, exist_ok=True)
+        container_non_idle_median_durations_csv_file_name = os.path.join(median_durations_test_dir, f"{container_name}.csv")
 
         cache_partitions_str = ""
         config_parts = config.split("_")
@@ -869,6 +872,7 @@ def main() -> None:
         cores_to_profile_data_df,
         profile_data_dir,
         plot_dir,
+        test_name,
         config,
         container_name,
         save_median_resource_usage_csvs,

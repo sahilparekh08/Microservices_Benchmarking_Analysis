@@ -121,7 +121,7 @@ echo -e "\npython3 $PROFILE_SRC_DIR/plot_profile_with_trace_data.py \\
     --plot-dir \"${PLOT_DIR}\" \\
     --save-trace-profile-csvs ${SAVE_TRACE_PROFILE_CSVS} \\
     --trace-profile-csv-dir \"${TRACE_PROFILE_CSV_DIR}\" \\
-    --median-durations-data-dir ${MEDIAN_DURATIONS_DATA_DIR} > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1"
+    --median-durations-data-dir \"${MEDIAN_DURATIONS_DATA_DIR}\" > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1"
 python3 "$PROFILE_SRC_DIR/plot_profile_with_trace_data.py" \
     --test-name "${TEST_NAME}" \
     --service-name-for-traces "${SERVICE_NAME_FOR_TRACES}" \
@@ -132,7 +132,7 @@ python3 "$PROFILE_SRC_DIR/plot_profile_with_trace_data.py" \
     --plot-dir "${PLOT_DIR}" \
     --save-trace-profile-csvs ${SAVE_TRACE_PROFILE_CSVS} \
     --trace-profile-csv-dir "${TRACE_PROFILE_CSV_DIR}" \
-    --median-durations-data-dir ${MEDIAN_DURATIONS_DATA_DIR} > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1 || {
+    --median-durations-data-dir "${MEDIAN_DURATIONS_DATA_DIR}" > $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH 2>&1 || {
     echo "Error: Failed to plot performance data with traces. See $PLOT_PROFILE_WITH_TRACE_DATA_LOG_PATH for details."
     exit 1
 }
