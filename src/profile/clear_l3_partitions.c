@@ -16,11 +16,26 @@ void flush_memory_range(void *addr, size_t size) {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Usage: %s <partition_id>\n", argv[0]);
+        printf("Usage: %s <partition_ids>\n", argv[0]);
         return 1;
     }
-    
-    int partition_id = atoi(argv[1]);
+
+    // Parse partition ID as a comma separated list of partition ids and store them
+    size_t partition_count = 0;
+    for (size_t i = 0; i < strlen(argv[1]); i++) {
+        if (argv[1][i] == ',') {
+            partition_count++;
+        }
+    }
+    partition_count++;
+    int* partition_ids = malloc(partition_count * sizeof(int));
+    if (!partition_ids) {
+        printf("Memory allocation failed\n");
+        return 1;
+    }
+    for (size_t i = 0; i < partition_count; i++) {
+        partition_ids[i] = atoi(strtok(i == 0 ? argv[1] : NULL, ","));
+    }
     const struct pqos_cap *p_cap;
     const struct pqos_cpuinfo *p_cpu;
     struct pqos_config config;
@@ -80,29 +95,38 @@ int main(int argc, char *argv[]) {
     
     printf("Found %u sockets\n", socket_count);
     
-    for (unsigned s = 0; s < socket_count; s++) {
-        unsigned socket_id = socket_ids[s];
-        struct pqos_l3ca l3ca[4];
-        unsigned l3ca_num = 0;
-        
-        ret = pqos_l3ca_get(socket_id, 4, &l3ca_num, l3ca);
-        if (ret != PQOS_RETVAL_OK) {
-            printf("Error retrieving L3 CAT config for socket %u: %d\n", socket_id, ret);
+    for (size_t i = 0; i < partition_count; i++) {
+        int partition_id = partition_ids[i];
+        if (partition_id < 0 || partition_id >= 4) {
+            printf("Invalid partition ID: %d\n", partition_id);
             continue;
         }
-        
-        if (partition_id < l3ca_num) {
-            printf("Clearing partition %d (COS: %u) on socket %u with mask: 0x%llx\n", 
-                   partition_id, l3ca[partition_id].class_id, socket_id, 
-                   (unsigned long long)l3ca[partition_id].u.ways_mask);
+        printf("Partition ID: %d\n", partition_id);
+        for (unsigned s = 0; s < socket_count; s++) {
+            unsigned socket_id = socket_ids[s];
+            struct pqos_l3ca l3ca[4];
+            unsigned l3ca_num = 0;
             
-            flush_memory_range(buffer, l3_size);
-        } else {
-            printf("Partition ID %d out of range (max: %u) on socket %u\n", 
-                   partition_id, l3ca_num-1, socket_id);
+            ret = pqos_l3ca_get(socket_id, 4, &l3ca_num, l3ca);
+            if (ret != PQOS_RETVAL_OK) {
+                printf("Error retrieving L3 CAT config for socket %u: %d\n", socket_id, ret);
+                continue;
+            }
+            
+            if (partition_id < l3ca_num) {
+                printf("Clearing partition %d (COS: %u) on socket %u with mask: 0x%llx\n", 
+                    partition_id, l3ca[partition_id].class_id, socket_id, 
+                    (unsigned long long)l3ca[partition_id].u.ways_mask);
+                
+                flush_memory_range(buffer, l3_size);
+            } else {
+                printf("Partition ID %d out of range (max: %u) on socket %u\n", 
+                    partition_id, l3ca_num-1, socket_id);
+            }
         }
     }
     
+    free(partition_ids);
     free(buffer);
     pqos_fini();
     printf("Cache clearing completed\n");

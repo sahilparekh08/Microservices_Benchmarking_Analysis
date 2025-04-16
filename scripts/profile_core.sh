@@ -2,7 +2,7 @@
 
 CORE_TO_PIN=""
 TARGET_CORES=""
-CONFIG=""
+DURATION=""
 DATA_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -15,8 +15,8 @@ while [[ $# -gt 0 ]]; do
             TARGET_CORES="$2"
             shift 2
             ;;
-        --config)
-            CONFIG="$2"
+        --duration)
+            DURATION="$2"
             shift 2
             ;;
         --data-dir)
@@ -30,40 +30,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CORE_TO_PIN" || -z "$TARGET_CORES" || -z "$CONFIG" || -z "$DATA_DIR" ]]; then
-    echo "Usage: $0 --core-to-pin <core_to_pin> --target-core <TARGET_CORES> --config <config> --data-dir <data_dir>"
+if [[ -z "$CORE_TO_PIN" || -z "$TARGET_CORES" || -z "$DURATION" || -z "$DATA_DIR" ]]; then
+    echo "Usage: $0 --core-to-pin <core_to_pin> --target-core <TARGET_CORES> --duration <duration in seconds> --data-dir <data_dir>"
     exit 1
 fi
 
 echo "Profiling with the following parameters:"
 echo "  Core to pin: $CORE_TO_PIN"
 echo "  Target cores: $TARGET_CORES"
-echo "  Config: $CONFIG"
+echo "  Duration: $DURATION"
 echo "  Data directory: $DATA_DIR"
-
-DURATION=0
-
-IFS=' ' read -r -a CONFIG <<< "$CONFIG"
-for i in "${CONFIG[@]}"; do
-    case "$i" in
-        d*)
-            DURATION="${i:1}"
-            ;;
-    esac
-done
-
-if [[ $DURATION -eq 0 ]]; then
-    echo "Duration not provided in config"
-    exit 1
-fi
 
 SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SRC_DIR="$(realpath "$SCRIPTS_DIR/../src")"
 PROFILE_SRC_DIR="$SRC_DIR/profile"
 LOG_DIR="$DATA_DIR/logs"
 PROFILE_DATA_DIR="$DATA_DIR/data/profile_data"
-
-DURATION=$((DURATION + 5))
 
 cleanup() {
     PROFILE_CORE_COMPILED_PATH="$PROFILE_SRC_DIR/profile_core"

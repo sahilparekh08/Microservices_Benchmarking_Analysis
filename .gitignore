@@ -7,3 +7,4 @@ __pycache__/
 *.o
 *.csv
 non_idle_median_durations/
+non_idle_durations/
