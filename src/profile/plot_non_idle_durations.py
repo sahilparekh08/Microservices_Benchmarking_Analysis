@@ -34,6 +34,9 @@ def plot_non_idle_durations(non_idle_durations_df: pd.DataFrame, container_name:
     worst_case_values = []
     for cp in cache_partitions:
         partition_data = non_idle_durations_df[non_idle_durations_df["cache_partitions"] == cp]["non_idle_duration"]
+        if partition_data.empty:
+            print(f"No data for cache partitions {cp} in container {container_name}. Skipping...")
+            continue
         median_values.append(partition_data.median())
         worst_case_values.append(partition_data.max())
     plt.plot(positions, median_values, 'bo-', linewidth=2, markersize=8, label="Median Non-Idle Duration")
