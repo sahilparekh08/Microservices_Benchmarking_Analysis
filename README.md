@@ -1,6 +1,6 @@
 # Microservices Benchmarking and Analysis
 
-Use Jaeger tracing and profiling on CPUs with Intel CAT technology. This repository can be used to benchmark microservices where request traces can be collected using a jaeger agent.
+Uses [Jaeger tracing](https://www.jaegertracing.io/) and profiling on CPUs with [Intel CAT technology](https://github.com/intel/intel-cmt-cat). This repository can be used to benchmark microservices where request traces can be collected using a jaeger agent.
 
 ### Prerequisites
 
