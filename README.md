@@ -12,7 +12,7 @@ This is currently only configured to run microservice graphs from the [DeathStar
 
 Example command:
 ```
-./scripts/run_benchmark_analysis \
+./scripts/run_benchmark_analysis.sh \
   # Container from the DeathStarBench socialnetwork graph to profile
   --container-name "socialnetwork-user-timeline-service-1" \
   # Service name as configured in Jaeger for the container
