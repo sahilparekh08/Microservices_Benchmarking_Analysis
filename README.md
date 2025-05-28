@@ -12,15 +12,15 @@ This is currently only configured to run microservice graphs from the [DeathStar
 
 Example command:
 ./scripts/run_benchmark_analysis  
-    --container-name "socialnetwork-user-timeline-service-1"           # Container from the deathstarbench socialnetwork graph to profile
-    --service-name-for-traces "user-timeline-service"                  # Service name for services that run on the above container as configured for jaeger
-    --test-name "Compose Post"                                         # Test name
-    --config "t6 c6 d30 R6 cp2"                                        # Config: t = number of threads, c = number of clients, d = duration of test, R = requests per second, cp = number of cache partitions attached to the core on which the target microservice is pinned
-    --docker-compose-dir "~/workspace/DeathStarBench/socialNetwork"    # path to the docker-compose.yml file
-    --core-to-pin-profiler 6                                           # core on which the profiling code will run
-    --cores-to-profile 7                                               # core to profile (llc loads, llc misses, instructions retired)
-    --cos 0,1,3                                                        # CoS in consideration (Intel CAT)
-    --jaeger-traces-limit 1000                                         # (optional arg) number requests to collect jaeger traces for
-    --save-traces-json                                                 # (optional arg) this saves the jaeger trace jsons
-    --non-idle-duration-only-mode                                      # (optional arg) when supplied, the cores are not profiled but only request non idle execution times are collected
-    --num-runs 10                                                      # (optional arg) how many times to run the test
+    --container-name "socialnetwork-user-timeline-service-1"           # Container from the deathstarbench socialnetwork graph to profile <br />
+    --service-name-for-traces "user-timeline-service"                  # Service name for services that run on the above container as configured for jaeger <br />
+    --test-name "Compose Post"                                         # Test name <br />
+    --config "t6 c6 d30 R6 cp2"                                        # Config: t = number of threads, c = number of clients, d = duration of test, R = requests per second, cp = number of cache partitions attached to the core on which the target microservice is pinned <br />
+    --docker-compose-dir "~/workspace/DeathStarBench/socialNetwork"    # path to the docker-compose.yml file <br />
+    --core-to-pin-profiler 6                                           # core on which the profiling code will run <br />
+    --cores-to-profile 7                                               # core to profile (llc loads, llc misses, instructions retired) <br />
+    --cos 0,1,3                                                        # CoS in consideration (Intel CAT) <br />
+    --jaeger-traces-limit 1000                                         # (optional arg) number requests to collect jaeger traces for <br />
+    --save-traces-json                                                 # (optional arg) this saves the jaeger trace jsons <br />
+    --non-idle-duration-only-mode                                      # (optional arg) when supplied, the cores are not profiled but only request non idle execution times are collected <br />
+    --num-runs 10                                                      # (optional arg) how many times to run the test <br />
