@@ -4,7 +4,7 @@ Uses [Jaeger tracing](https://www.jaegertracing.io/) and profiling on CPUs with 
 
 ### Prerequisites
 
-Uses Intel CAT technology to allocate cache partitions to cores. Use isolcpus to isolate a core to run the microservice to be profiled on and another core to run the profiling code.
+Uses Intel CAT technology to allocate cache partitions to cores. Uses 'isolcpus' to isolate cores to run the microservice to be profiled on and another core to run the profiling code.
 
 ### Instructions
 
